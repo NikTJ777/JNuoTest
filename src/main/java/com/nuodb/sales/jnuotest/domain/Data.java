@@ -12,6 +12,7 @@ public class Data extends Entity {
     private String name;
     private String description;
     private String path;
+    private boolean active;
 
     protected Data(long id, String name) {
         super(id);
@@ -60,5 +61,13 @@ public class Data extends Entity {
 
     public void setPath(String path) {
         this.path = path;
+    }
+
+    public boolean isActive() {
+        return active;
+    }
+
+    public void setActive(boolean active) {
+        this.active = active;
     }
 }

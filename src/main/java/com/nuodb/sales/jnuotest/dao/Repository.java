@@ -7,4 +7,6 @@ public interface Repository<T extends Entity> {
     public T findById(long id);
 
     public long persist(T entity);
+
+    public void update(long id, String columns, Object ... values);
 }

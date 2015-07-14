@@ -85,7 +85,7 @@ public class SqlSession implements AutoCloseable {
     public void execute(String script) {
         if (script == null || script.length() == 0) return;
 
-        String[] lines = script.split("\n");
+        String[] lines = script.split("@");
 
         String command = "";
         try (Statement sql = connection().createStatement()) {

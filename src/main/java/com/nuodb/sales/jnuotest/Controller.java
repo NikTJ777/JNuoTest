@@ -2,17 +2,14 @@ package com.nuodb.sales.jnuotest;
 
 import com.nuodb.sales.jnuotest.dao.SqlSession;
 import com.nuodb.sales.jnuotest.domain.*;
+import com.nuodb.sales.jnuotest.domain.Event;
 
 import javax.sql.DataSource;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.sql.Connection;
-import java.util.Date;
-import java.util.Map;
-import java.util.Properties;
-import java.util.Random;
+import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -38,6 +35,8 @@ public class Controller implements AutoCloseable {
 
     long runTime;
     float averageRate;
+    int minGroups, maxGroups;
+    int minData, maxData;
     float burstProbability;
     int minBurst, maxBurst;
     int maxQueued;
@@ -46,6 +45,9 @@ public class Controller implements AutoCloseable {
 
     volatile long totalInserts = 0;
     volatile long totalTime = 0;
+
+    long totalEvents;
+    long wallTime;
 
     private Random random = new Random();
 
@@ -57,6 +59,10 @@ public class Controller implements AutoCloseable {
     public static final String MAX_QUEUED =          "max.queued";
     public static final String DB_PROPERTIES_PATH = "db.properties.path";
     public static final String RUN_TIME =           "run.time";
+    public static final String MIN_GROUPS =         "min.groups";
+    public static final String MAX_GROUPS =         "max.groups";
+    public static final String MIN_DATA =           "min.data";
+    public static final String MAX_DATA =           "max.data";
     public static final String BURST_PROBABILITY_PERCENTAGE = "burst.probability.percentage";
     public static final String MIN_BURST =          "min.burst.count";
     public static final String MAX_BURST =          "max.burst.count";
@@ -79,6 +85,10 @@ public class Controller implements AutoCloseable {
         defaultProperties.setProperty(AVERAGE_RATE, "0");
         defaultProperties.setProperty(THREAD_COUNT, "1");
         defaultProperties.setProperty(MAX_QUEUED, "1");
+        defaultProperties.setProperty(MIN_GROUPS, "1");
+        defaultProperties.setProperty(MAX_GROUPS, "5");
+        defaultProperties.setProperty(MIN_DATA, "500");
+        defaultProperties.setProperty(MAX_DATA, "3500");
         defaultProperties.setProperty(BURST_PROBABILITY_PERCENTAGE, "0");
         defaultProperties.setProperty(MIN_BURST, "0");
         defaultProperties.setProperty(MAX_BURST, "0");
@@ -105,10 +115,21 @@ public class Controller implements AutoCloseable {
         // now load database properties into second (higher-priority) level of fileProperties
         loadProperties(fileProperties, DB_PROPERTIES_PATH);
 
-        log.info(String.format("Properties: %s", appProperties));
+        log.info(String.format("command-line properties: %s", appProperties));
+
+        StringBuilder builder = new StringBuilder(1024);
+        builder.append("\n***************** Resolved Properties ********************\n");
+        for (Object key : defaultProperties.keySet()) {
+            builder.append(String.format("%s = %s\n", key.toString(), appProperties.getProperty(key.toString())));
+        }
+        log.info(builder.toString() + "**********************************************************\n");
 
         runTime = Integer.parseInt(appProperties.getProperty(RUN_TIME)) * Millis;
         averageRate = Float.parseFloat(appProperties.getProperty(AVERAGE_RATE));
+        minGroups = Integer.parseInt(appProperties.getProperty(MIN_GROUPS));
+        maxGroups = Integer.parseInt(appProperties.getProperty(MAX_GROUPS));
+        minData = Integer.parseInt(appProperties.getProperty(MIN_DATA));
+        maxData = Integer.parseInt(appProperties.getProperty(MAX_DATA));
         burstProbability = Float.parseFloat(appProperties.getProperty(BURST_PROBABILITY_PERCENTAGE));
         minBurst = Integer.parseInt(appProperties.getProperty(MIN_BURST));
         maxBurst = Integer.parseInt(appProperties.getProperty(MAX_BURST));
@@ -119,7 +140,7 @@ public class Controller implements AutoCloseable {
             burstProbability = minBurst = maxBurst = 0;
         }
 
-        DataSource dataSource = new com.nuodb.jdbc.DataSource(fileProperties);
+        DataSource dataSource = new com.nuodb.jdbc.DataSource(appProperties);
         SqlSession.init(dataSource);
 
         ownerRepository = new OwnerRepository();
@@ -157,7 +178,8 @@ public class Controller implements AutoCloseable {
         double currentRate = 0.0;
         long averageSleep = (long) (Millis2Seconds / averageRate);
 
-        int counter = 0;
+        totalEvents = 0;
+        wallTime = 0;
 
         double burstRate = 0.0;
         int burstSize = 0;
@@ -167,12 +189,12 @@ public class Controller implements AutoCloseable {
         Thread.sleep(settleTime);
 
         do {
-            executor.execute(new EventGenerator(counter++));
+            executor.execute(new EventGenerator(totalEvents++));
 
             log.info(String.format("Event scheduled. Queue size=%d", ((ThreadPoolExecutor) executor).getQueue().size()));
 
             now = System.currentTimeMillis();
-            currentRate = (Millis2Seconds * counter) / (now - start);
+            currentRate = (Millis2Seconds * totalEvents) / (now - start);
 
             log.info(String.format("now=%d; endTime=%d;  elapsed=%d; time left=%d", now, endTime, now-start, endTime - now));
 
@@ -202,7 +224,11 @@ public class Controller implements AutoCloseable {
 
             }
 
-            log.info(String.format("Total inserts=%,d; total time %.2f ms; rate=%.2f ips", totalInserts, totalTime / Nano2Millis, Nano2Seconds * totalInserts / totalTime));
+            wallTime = System.currentTimeMillis() - start;
+
+            log.info(String.format("Processed %,d events containing %,d records in %.2f secs\n\tThroughput:\t%.2f events/sec at %.2f ips;\n\tSpeed:\t\t%,d inserts in %.2f secs = %.2f ips",
+                    totalEvents, totalInserts, (wallTime / Millis2Seconds), (Millis2Seconds * totalEvents / wallTime), (Millis2Seconds * totalInserts / wallTime),
+                    totalInserts, (totalTime / Nano2Seconds), (Nano2Seconds * totalInserts / totalTime)));
 
         } while (System.currentTimeMillis() < endTime);
     }
@@ -215,8 +241,10 @@ public class Controller implements AutoCloseable {
             System.out.println("Interrupted while waiting for shutdown - exiting");
         }
 
-        log.info(String.format("Exiting with %d items remaining in the queue. Total inserts %,d in %.2f sec at %.2f ips", ((ThreadPoolExecutor) executor).getQueue().size(),
-                totalInserts, totalTime / Nano2Seconds, Nano2Seconds * totalInserts / totalTime));
+        log.info(String.format("Exiting with %d items remaining in the queue.\n\tProcessed %,d events containing %,d records in %.2f secs\n\tThroughput:\t%.2f events/sec at %.2f ips;\n\tSpeed:\t\t%,d inserts in %.2f secs = %.2f ips",
+                ((ThreadPoolExecutor) executor).getQueue().size(),
+                totalEvents, totalInserts, (wallTime / Millis2Seconds), (Millis2Seconds * totalEvents / wallTime), (Millis2Seconds * totalInserts / wallTime),
+                totalInserts, (totalTime / Nano2Seconds), (Nano2Seconds * totalInserts / totalTime)));
 
         SqlSession.getCurrent().close();
     }
@@ -236,10 +264,10 @@ public class Controller implements AutoCloseable {
         for (String param : args) {
             String[] keyVal = param.split("=");
             if (keyVal.length == 2) {
-                props.setProperty(keyVal[0], keyVal[1]);
+                props.setProperty(keyVal[0].trim().replaceAll("-", ""), keyVal[1]);
             }
             else {
-                props.setProperty(param, "true");
+                props.setProperty(param.trim().replaceAll("-", ""), "true");
             }
         }
     }
@@ -312,29 +340,50 @@ public class Controller implements AutoCloseable {
             long start = System.nanoTime();
 
             long ownerId = generateOwner();
+            System.out.println("\n------------------------------------------------");
             report("Owner", 1, System.nanoTime() - start);
 
             long eventId = generateEvent(ownerId);
 
-            int groupCount = 1 + random.nextInt(5);
+            int groupCount = minGroups + random.nextInt(maxGroups - minGroups);
             log.info(String.format("Creating %d groups", groupCount));
 
             int total = 2 + groupCount;
 
+            Map<String, Data> dataRows = new HashMap<String, Data>(maxData);
+
+            // data records per group
+            int dataCount = (minData + random.nextInt(maxData - minData)) / groupCount;
+            log.info(String.format("Creating %d Data records @ %d records per group", dataCount * groupCount, dataCount));
+
             for (int gx = 0; gx < groupCount; gx++) {
                 long groupId = generateGroup(eventId, gx);
-                int dataCount = 0;
+
+                total += dataCount;
+
+                dataRows.clear();
+                for (int dx = 0; dx < dataCount; dx++) {
+                    Data data = generateData(groupId, dx);
+                    dataRows.put(data.getInstanceUID(), data);
+                }
+
+                long uniqueRows = dataRepository.checkUniqueness(dataRows);
+                log.info(String.format("%d rows out of %d new rows are unique", uniqueRows, dataCount));
+                groupRepository.update(groupId, "dataCount", uniqueRows);
+
+                long dataStart = System.nanoTime();
+                int count = 0;
                 try (SqlSession session = SqlSession.start(bulkCommitMode)) {
-                    dataCount = 500 + random.nextInt(1000);
-                    total += dataCount;
-                    for (int dx = 0; dx <= dataCount; dx++) {
-                        generateData(groupId, dx);
+                    for (Data data : dataRows.values()) {
+                        dataRepository.persist(data);
+                        count++;
                     }
+                    log.info(String.format("inserting %d data rows", count));
                 } catch (Exception e) {
                     log.info(String.format("Error inserting data row %s", e.toString()));
                 }
 
-                groupRepository.update(groupId, "dataCount", dataCount);
+                report("Data Group", dataCount, System.nanoTime() - dataStart);
             }
 
             long duration = System.nanoTime() - start;
@@ -374,14 +423,18 @@ public class Controller implements AutoCloseable {
             return groupRepository.persist(group);
         }
 
-        protected void generateData(long groupId, int index) {
+        protected Data generateData(long groupId, int index) {
+            String instanceUID = String.format("image-%d-%d-%d", unique, groupId, index);
+
             Data data = new Data();
             data.setGroup(groupId);
+            data.setInstanceUID(instanceUID);
             data.setName(String.format("Data-%d-%d-%d", unique, groupId, index));
             data.setDescription("Test data generated by JNuoTest");
-            data.setPath(String.format("file:///remote/storage/data-%d-%d-%d.bin", unique, groupId, index));
+            data.setPath(String.format("file:///remote/storage/%s.bin", instanceUID));
 
-            dataRepository.persist(data);
+            return data;
+            //dataRepository.persist(data);
         }
 
         private void report(String name, int count, long duration) {

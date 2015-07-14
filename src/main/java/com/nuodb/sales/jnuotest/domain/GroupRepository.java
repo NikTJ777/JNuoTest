@@ -1,10 +1,12 @@
 package com.nuodb.sales.jnuotest.domain;
 
 import com.nuodb.sales.jnuotest.dao.AbstractRepository;
+import com.nuodb.sales.jnuotest.dao.PersistenceException;
 
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.Date;
 
 /**
  * Created by nik on 7/5/15.
