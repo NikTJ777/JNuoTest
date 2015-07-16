@@ -1,6 +1,7 @@
 package com.nuodb.sales.jnuotest.domain;
 
 import com.nuodb.sales.jnuotest.dao.AbstractRepository;
+import com.nuodb.sales.jnuotest.dao.ConfigurationException;
 import com.nuodb.sales.jnuotest.dao.PersistenceException;
 import com.nuodb.sales.jnuotest.dao.SqlSession;
 
@@ -17,6 +18,11 @@ public class DataRepository extends AbstractRepository<Data> {
     public DataRepository() {
         super("NuoTest.T_DATA", "groupId", "instanceUID", "name", "description", "path", "active");
     }
+
+    @Override
+    public void init()
+        throws ConfigurationException
+    {}
 
     /**
      * Check the uniqueness of a set of data rows.
@@ -39,8 +45,8 @@ public class DataRepository extends AbstractRepository<Data> {
 
         int total = dataRows.size();
 
-        String sql = String.format(findBySql, getTableName(), "groupId", String.valueOf(data.getGroup()));
-        try (ResultSet existing = SqlSession.getCurrent().getStatement(sql).executeQuery()) {
+        //String sql = String.format(findBySql, getTableName(), "groupId", String.valueOf(data.getGroup()));
+        try (ResultSet existing = queryBy("groupId", data.getGroup())) {
             while (existing.next()) {
                 data = dataRows.get(existing.getString("instanceUID"));
                 if (data != null) {

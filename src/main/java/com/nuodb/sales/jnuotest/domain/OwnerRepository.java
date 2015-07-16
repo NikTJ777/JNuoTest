@@ -1,6 +1,7 @@
 package com.nuodb.sales.jnuotest.domain;
 
 import com.nuodb.sales.jnuotest.dao.AbstractRepository;
+import com.nuodb.sales.jnuotest.dao.ConfigurationException;
 
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -14,6 +15,11 @@ public class OwnerRepository extends AbstractRepository<Owner> {
     public OwnerRepository() {
         super("NuoTest.T_OWNER", "name", "masterAliasId");
     }
+
+    @Override
+    public void init()
+        throws ConfigurationException
+    {}
 
     @Override
     public Owner mapIn(ResultSet row) throws SQLException {

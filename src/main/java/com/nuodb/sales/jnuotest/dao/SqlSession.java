@@ -129,12 +129,12 @@ public class SqlSession implements AutoCloseable {
     }
 
     protected void closeStatements() {
-        if (statements == null) return;
-
         if (batch != null) {
             try { batch.executeBatch(); } catch (Exception e) {}
             batch = null;
         }
+
+        if (statements == null) return;
 
         for (PreparedStatement ps : statements.values()) {
             try { ps.close(); } catch (Exception e) {}

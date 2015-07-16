@@ -12,4 +12,8 @@ public class PersistenceException extends RuntimeException {
     public PersistenceException(Exception cause, String msg, Object... params) {
         super(String.format(msg, params), cause);
     }
+
+    public String toString() {
+        return String.format("Persistence Exception: %s\ncaused by: %s", getMessage(), getCause());
+    }
 }

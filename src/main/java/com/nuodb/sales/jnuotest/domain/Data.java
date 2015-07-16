@@ -12,7 +12,7 @@ public class Data extends Entity {
     private String name;
     private String description;
     private String path;
-    private boolean active;
+    private boolean active = true;
 
     protected Data(long id, String name) {
         super(id);

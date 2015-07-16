@@ -1,6 +1,7 @@
 package com.nuodb.sales.jnuotest.domain;
 
 import com.nuodb.sales.jnuotest.dao.AbstractRepository;
+import com.nuodb.sales.jnuotest.dao.ConfigurationException;
 import com.nuodb.sales.jnuotest.dao.PersistenceException;
 
 import java.sql.PreparedStatement;
@@ -16,6 +17,11 @@ public class GroupRepository extends AbstractRepository<Group> {
     public GroupRepository() {
         super("NuoTest.T_GROUP", "eventId", "name", "description", "dataCount", "date");
     }
+
+    @Override
+    public void init()
+        throws ConfigurationException
+    {}
 
     @Override
     protected Group mapIn(ResultSet row) throws SQLException {
