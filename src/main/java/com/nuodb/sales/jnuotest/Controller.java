@@ -274,9 +274,9 @@ public class Controller implements AutoCloseable {
 
                     appLog.info(String.format("Current Rate= %.2f; sleeping for %,d ms", currentRate, sleepTime));
 
-                    if (timingSpeedup > 0) {
+                    if (timingSpeedup > 1) {
                         sleepTime /= timingSpeedup;
-                        appLog.info(String.format("Warp-drive: speedup %d; sleeping for %d ms", timingSpeedup, sleepTime));
+                        appLog.info(String.format("Warp-drive: speedup %f; sleeping for %d ms", timingSpeedup, sleepTime));
                     }
 
                     Thread.sleep(sleepTime);
@@ -402,7 +402,7 @@ public class Controller implements AutoCloseable {
         long delay = (minViewAfterInsert + random.nextInt(maxViewAfterInsert - minViewAfterInsert));
 
         // implement warp-drive...
-        if (timingSpeedup > 0) delay /= timingSpeedup;
+        if (timingSpeedup > 1) delay /= timingSpeedup;
 
         queryExecutor.schedule(new EventViewTask(eventId), (long) delay, TimeUnit.SECONDS);
 
