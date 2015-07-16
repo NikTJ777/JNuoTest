@@ -42,6 +42,7 @@ public class Controller implements AutoCloseable {
     float burstProbability;
     int minBurst, maxBurst;
     int maxQueued;
+    boolean initDb = false;
 
     SqlSession.Mode bulkCommitMode;
 
@@ -79,6 +80,7 @@ public class Controller implements AutoCloseable {
     public static final String BURST_PROBABILITY_PERCENTAGE = "burst.probability.percentage";
     public static final String MIN_BURST =          "min.burst.count";
     public static final String MAX_BURST =          "max.burst.count";
+    public static final String DB_INIT =            "db.init";
     public static final String DB_INIT_SQL =        "db.init.sql";
     public static final String BULK_COMMIT_MODE =   "bulk.commit.mode";
 
@@ -113,6 +115,7 @@ public class Controller implements AutoCloseable {
         defaultProperties.setProperty(MAX_BURST, "0");
         defaultProperties.setProperty(RUN_TIME, "5");
         defaultProperties.setProperty(BULK_COMMIT_MODE, "BATCH");
+        defaultProperties.setProperty(DB_INIT, "false");
     }
 
     public void configure(String[] args)
@@ -166,6 +169,7 @@ public class Controller implements AutoCloseable {
         minBurst = Integer.parseInt(appProperties.getProperty(MIN_BURST));
         maxBurst = Integer.parseInt(appProperties.getProperty(MAX_BURST));
         maxQueued = Integer.parseInt(appProperties.getProperty(MAX_QUEUED));
+        initDb = Boolean.parseBoolean(appProperties.getProperty(DB_INIT));
 
         if (maxViewAfterInsert > 0 && maxViewAfterInsert < minViewAfterInsert) {
             maxViewAfterInsert = minViewAfterInsert;
@@ -215,7 +219,9 @@ public class Controller implements AutoCloseable {
      * perform any logic required after configuration, and before the Controller can be used
      */
     public void init() {
-        initializeDatabase();
+        if (initDb) {
+            initializeDatabase();
+        }
     }
 
     /**
@@ -316,8 +322,6 @@ public class Controller implements AutoCloseable {
     }
 
     protected void initializeDatabase() {
-        appLog.info(String.format("appProperties: %s", appProperties.toString()));
-
         String script = appProperties.getProperty(DB_INIT_SQL);
         if (script == null) appLog.info("Somehow script is NULL");
 
