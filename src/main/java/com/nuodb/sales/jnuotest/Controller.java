@@ -10,7 +10,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.sql.SQLTransientException;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
@@ -64,9 +63,9 @@ public class Controller implements AutoCloseable {
     private static final Properties defaultProperties = new Properties();
 
     public static final String PROPERTIES_PATH =    "properties.path";
-    public static final String AVERAGE_RATE =       "timing.average.rate";
-    public static final String MIN_VIEW_AFTER_INSERT =  "timing.min.view.after.insert";
-    public static final String MAX_VIEW_AFTER_INSERT =  "timing.max.view.after.insert";
+    public static final String AVERAGE_RATE =       "timing.rate";
+    public static final String MIN_VIEW_DELAY =     "timing.min.view.delay";
+    public static final String MAX_VIEW_DELAY =     "timing.max.view.delay";
     public static final String TIMING_SPEEDUP =     "timing.speedup";
     public static final String INSERT_THREADS =     "insert.threads";
     public static final String QUERY_THREADS =      "query.threads";
@@ -77,9 +76,9 @@ public class Controller implements AutoCloseable {
     public static final String MAX_GROUPS =         "max.groups";
     public static final String MIN_DATA =           "min.data";
     public static final String MAX_DATA =           "max.data";
-    public static final String BURST_PROBABILITY_PERCENTAGE = "burst.probability.percentage";
-    public static final String MIN_BURST =          "min.burst.count";
-    public static final String MAX_BURST =          "max.burst.count";
+    public static final String BURST_PROBABILITY_PERCENT = "burst.probability.percent";
+    public static final String MIN_BURST =          "min.burst";
+    public static final String MAX_BURST =          "max.burst";
     public static final String DB_INIT =            "db.init";
     public static final String DB_INIT_SQL =        "db.init.sql";
     public static final String BULK_COMMIT_MODE =   "bulk.commit.mode";
@@ -100,8 +99,8 @@ public class Controller implements AutoCloseable {
         defaultProperties.setProperty(PROPERTIES_PATH, "classpath://properties/Application.properties");
         defaultProperties.setProperty(DB_PROPERTIES_PATH, "classpath://properties/Database.properties");
         defaultProperties.setProperty(AVERAGE_RATE, "0");
-        defaultProperties.setProperty(MIN_VIEW_AFTER_INSERT, "0");
-        defaultProperties.setProperty(MAX_VIEW_AFTER_INSERT, "0");
+        defaultProperties.setProperty(MIN_VIEW_DELAY, "0");
+        defaultProperties.setProperty(MAX_VIEW_DELAY, "0");
         defaultProperties.setProperty(TIMING_SPEEDUP, "1");
         defaultProperties.setProperty(INSERT_THREADS, "1");
         defaultProperties.setProperty(QUERY_THREADS, "1");
@@ -110,7 +109,7 @@ public class Controller implements AutoCloseable {
         defaultProperties.setProperty(MAX_GROUPS, "5");
         defaultProperties.setProperty(MIN_DATA, "500");
         defaultProperties.setProperty(MAX_DATA, "3500");
-        defaultProperties.setProperty(BURST_PROBABILITY_PERCENTAGE, "0");
+        defaultProperties.setProperty(BURST_PROBABILITY_PERCENT, "0");
         defaultProperties.setProperty(MIN_BURST, "0");
         defaultProperties.setProperty(MAX_BURST, "0");
         defaultProperties.setProperty(RUN_TIME, "5");
@@ -132,9 +131,12 @@ public class Controller implements AutoCloseable {
         parseCommandLine(args, appProperties);
 
         if ("true".equalsIgnoreCase(appProperties.getProperty("help"))) {
-            System.out.println("java -jar <jarfilename> [option=value]\nwhere <option> can be any of:\n");
-            for (Object key : defaultProperties.keySet()) {
-                System.out.println(key.toString());
+            System.out.println("java -jar <jarfilename> [option=value [, option=value, ...] ]\nwhere <option> can be any of:\n");
+
+            String[] keys = defaultProperties.keySet().toArray(new String[0]);
+            Arrays.sort(keys);
+            for (String key : keys) {
+                System.out.println(String.format("%s\t\t\t\t(default=%s)", key, defaultProperties.getProperty(key)));
             }
 
             System.out.println("\nHelp called - nothing to do; exiting.");
@@ -158,14 +160,14 @@ public class Controller implements AutoCloseable {
 
         runTime = Integer.parseInt(appProperties.getProperty(RUN_TIME)) * Millis;
         averageRate = Float.parseFloat(appProperties.getProperty(AVERAGE_RATE));
-        minViewAfterInsert = Integer.parseInt(appProperties.getProperty(MIN_VIEW_AFTER_INSERT));
-        maxViewAfterInsert = Integer.parseInt(appProperties.getProperty(MAX_VIEW_AFTER_INSERT));
+        minViewAfterInsert = Integer.parseInt(appProperties.getProperty(MIN_VIEW_DELAY));
+        maxViewAfterInsert = Integer.parseInt(appProperties.getProperty(MAX_VIEW_DELAY));
         timingSpeedup = Float.parseFloat(appProperties.getProperty(TIMING_SPEEDUP));
         minGroups = Integer.parseInt(appProperties.getProperty(MIN_GROUPS));
         maxGroups = Integer.parseInt(appProperties.getProperty(MAX_GROUPS));
         minData = Integer.parseInt(appProperties.getProperty(MIN_DATA));
         maxData = Integer.parseInt(appProperties.getProperty(MAX_DATA));
-        burstProbability = Float.parseFloat(appProperties.getProperty(BURST_PROBABILITY_PERCENTAGE));
+        burstProbability = Float.parseFloat(appProperties.getProperty(BURST_PROBABILITY_PERCENT));
         minBurst = Integer.parseInt(appProperties.getProperty(MIN_BURST));
         maxBurst = Integer.parseInt(appProperties.getProperty(MAX_BURST));
         maxQueued = Integer.parseInt(appProperties.getProperty(MAX_QUEUED));
