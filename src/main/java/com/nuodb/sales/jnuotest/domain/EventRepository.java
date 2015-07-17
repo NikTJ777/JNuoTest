@@ -5,6 +5,7 @@ import com.nuodb.sales.jnuotest.dao.ConfigurationException;
 import com.nuodb.sales.jnuotest.dao.PersistenceException;
 import com.nuodb.sales.jnuotest.dao.SqlSession;
 
+import javax.sql.DataSource;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -19,19 +20,11 @@ public class EventRepository extends AbstractRepository<Event> {
     private GroupRepository groupRepository;
     private DataRepository dataRepository;
 
-    public EventRepository() {
+    public EventRepository(OwnerRepository ownerRepository, GroupRepository groupRepository, DataRepository dataRepository) {
         super("NuoTest.T_EVENT", "ownerId", "name", "description", "date");
-    }
 
-    public void setOwnerRepository(OwnerRepository ownerRepository) {
         this.ownerRepository = ownerRepository;
-    }
-
-    public void setGroupRepository(GroupRepository groupRepository) {
         this.groupRepository = groupRepository;
-    }
-
-    public void setDataRepository(DataRepository dataRepository) {
         this.dataRepository = dataRepository;
     }
 
@@ -56,7 +49,7 @@ public class EventRepository extends AbstractRepository<Event> {
         throws PersistenceException
     {
         EventDetails result = null;
-        try (SqlSession session = SqlSession.start(SqlSession.Mode.AUTO_COMMIT)) {
+        try {
 
             Event event = findById(eventId);
             Owner owner = ownerRepository.findById(event.getOwner());

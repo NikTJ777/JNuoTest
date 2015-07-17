@@ -10,6 +10,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
@@ -177,6 +179,12 @@ public class Controller implements AutoCloseable {
         initDb = Boolean.parseBoolean(appProperties.getProperty(DB_INIT));
         queryOnly = Boolean.parseBoolean(appProperties.getProperty(QUERY_ONLY));
 
+        String threadParam = appProperties.getProperty(INSERT_THREADS);
+        int insertThreads = (threadParam != null ? Integer.parseInt(threadParam) : 1);
+
+        threadParam = appProperties.getProperty(QUERY_THREADS);
+        int queryThreads = (threadParam != null ? Integer.parseInt(threadParam) : 1);
+
         if (maxViewAfterInsert > 0 && maxViewAfterInsert < minViewAfterInsert) {
             maxViewAfterInsert = minViewAfterInsert;
         }
@@ -187,7 +195,7 @@ public class Controller implements AutoCloseable {
         }
 
         DataSource dataSource = new com.nuodb.jdbc.DataSource(appProperties);
-        SqlSession.init(dataSource);
+        SqlSession.init(dataSource, insertThreads + queryThreads);
 
         ownerRepository = new OwnerRepository();
         ownerRepository.init();
@@ -198,21 +206,13 @@ public class Controller implements AutoCloseable {
         dataRepository = new DataRepository();
         dataRepository.init();
 
-        eventRepository = new EventRepository();
-        eventRepository.setOwnerRepository(ownerRepository);
-        eventRepository.setGroupRepository(groupRepository);
-        eventRepository.setDataRepository(dataRepository);
+        eventRepository = new EventRepository(ownerRepository, groupRepository, dataRepository);
         eventRepository.init();
 
         try { bulkCommitMode = Enum.valueOf(SqlSession.Mode.class, appProperties.getProperty(BULK_COMMIT_MODE)); }
         catch (Exception e) { bulkCommitMode = SqlSession.Mode.BATCH; }
 
-        String threadParam = appProperties.getProperty(INSERT_THREADS);
-        int insertThreads = (threadParam != null ? Integer.parseInt(threadParam) : 1);
         insertExecutor = Executors.newFixedThreadPool(insertThreads);
-
-        threadParam = appProperties.getProperty(QUERY_THREADS);
-        int queryThreads = (threadParam != null ? Integer.parseInt(threadParam) : 1);
         queryExecutor= Executors.newScheduledThreadPool(queryThreads);
 
         if ("true".equalsIgnoreCase(appProperties.getProperty("check.config"))) {
@@ -238,8 +238,8 @@ public class Controller implements AutoCloseable {
     public void run()
         throws InterruptedException
     {
-        long endTime = System.currentTimeMillis() + runTime;
         long start = System.currentTimeMillis();
+        long endTime = start + runTime;
         long now;
 
         double currentRate = 0.0;
@@ -251,6 +251,7 @@ public class Controller implements AutoCloseable {
         double burstRate = 0.0;
         int burstSize = 0;
 
+        // ensure that first sample time is different from start time...
         long settleTime = 2 * Millis;
         appLog.info(String.format("Settling for %d: ", settleTime));
         Thread.sleep(settleTime);
@@ -267,7 +268,7 @@ public class Controller implements AutoCloseable {
                 appLog.info(String.format("Processed %,d events containing %,d records in %.2f secs"
                                 + "\n\tThroughput:\t%.2f events/sec at %.2f ips;"
                                 + "\n\tSpeed:\t\t%,d inserts in %.2f secs = %.2f ips"
-                                + "\n\tQueries:\t%,d queries accessing %,d records in %.2f secs at %.2f qps",
+                                + "\n\tQueries:\t%,d queries got %,d records in %.2f secs at %.2f qps",
                         totalEvents, totalInserts/*.get()*/, (wallTime / Millis2Seconds), (Millis2Seconds * totalEvents / wallTime), (Millis2Seconds * totalInserts/*.get()*/ / wallTime),
                         totalInserts /*.get()*/, (totalInsertTime/*.get()*/ / Nano2Seconds), (Nano2Seconds * totalInserts/*.get()*/ / totalInsertTime/*.get()*/),
                         totalQueries.get(), totalQueryRecords.get(), (totalQueryTime.get() / Nano2Seconds), (Nano2Seconds * totalQueries.get() / totalQueryTime.get())));
@@ -332,7 +333,7 @@ public class Controller implements AutoCloseable {
             appLog.info(String.format("Processed %,d events containing %,d records in %.2f secs"
                             + "\n\tThroughput:\t%.2f events/sec at %.2f ips;"
                             + "\n\tSpeed:\t\t%,d inserts in %.2f secs = %.2f ips"
-                            + "\n\tQueries:\t%,d queries accessing %,d records in %.2f secs at %.2f qps",
+                            + "\n\tQueries:\t%,d queries got %,d records in %.2f secs at %.2f qps",
                     totalEvents, totalInserts/*.get()*/, (wallTime / Millis2Seconds), (Millis2Seconds * totalEvents / wallTime), (Millis2Seconds * totalInserts/*.get()*/ / wallTime),
                     totalInserts /*.get()*/, (totalInsertTime/*.get()*/ / Nano2Seconds), (Nano2Seconds * totalInserts/*.get()*/ / totalInsertTime/*.get()*/),
                     totalQueries.get(), totalQueryRecords.get(), (totalQueryTime.get() / Nano2Seconds), (Nano2Seconds * totalQueries.get() / totalQueryTime.get())));
@@ -345,17 +346,30 @@ public class Controller implements AutoCloseable {
     {
         insertExecutor.shutdownNow();
         queryExecutor.shutdownNow();
-        try { insertExecutor.awaitTermination(10, TimeUnit.SECONDS); }
+
+        try {
+            insertExecutor.awaitTermination(10, TimeUnit.SECONDS);
+            queryExecutor.awaitTermination(10, TimeUnit.SECONDS);
+        }
         catch (InterruptedException e) {
             System.out.println("Interrupted while waiting for shutdown - exiting");
         }
 
-        appLog.info(String.format("Exiting with %d items remaining in the queue.\n\tProcessed %,d events containing %,d records in %.2f secs\n\tThroughput:\t%.2f events/sec at %.2f ips;\n\tSpeed:\t\t%,d inserts in %.2f secs = %.2f ips",
+        appLog.info(String.format("Exiting with %d items remaining in the queue.\n\tProcessed %,d events containing %,d records in %.2f secs"
+                        + "\n\tThroughput:\t%.2f events/sec at %.2f ips;"
+                        + "\n\tSpeed:\t\t%,d inserts in %.2f secs = %.2f ips"
+                        + "\n\tQueries:\t%,d queries got %,d records in %.2f secs at %.2f qps",
                 ((ThreadPoolExecutor) insertExecutor).getQueue().size(),
                 totalEvents, totalInserts/*.get()*/, (wallTime / Millis2Seconds), (Millis2Seconds * totalEvents / wallTime), (Millis2Seconds * totalInserts/*.get()*/ / wallTime),
-                totalInserts/*.get()*/, (totalInsertTime/*.get()*/ / Nano2Seconds), (Nano2Seconds * totalInserts/*.get()*/ / totalInsertTime/*.get()*/)));
+                totalInserts /*.get()*/, (totalInsertTime/*.get()*/ / Nano2Seconds), (Nano2Seconds * totalInserts/*.get()*/ / totalInsertTime/*.get()*/),
+                totalQueries.get(), totalQueryRecords.get(), (totalQueryTime.get() / Nano2Seconds), (Nano2Seconds * totalQueries.get() / totalQueryTime.get())));
 
-        SqlSession.getCurrent().close();
+        //appLog.info(String.format("Exiting with %d items remaining in the queue.\n\tProcessed %,d events containing %,d records in %.2f secs\n\tThroughput:\t%.2f events/sec at %.2f ips;\n\tSpeed:\t\t%,d inserts in %.2f secs = %.2f ips",
+        //        ((ThreadPoolExecutor) insertExecutor).getQueue().size(),
+        //        totalEvents, totalInserts/*.get()*/, (wallTime / Millis2Seconds), (Millis2Seconds * totalEvents / wallTime), (Millis2Seconds * totalInserts/*.get()*/ / wallTime),
+        //        totalInserts/*.get()*/, (totalInsertTime/*.get()*/ / Nano2Seconds), (Nano2Seconds * totalInserts/*.get()*/ / totalInsertTime/*.get()*/)));
+
+        SqlSession.cleanup();
     }
 
     protected void initializeDatabase() {
@@ -363,7 +377,9 @@ public class Controller implements AutoCloseable {
         if (script == null) appLog.info("Somehow script is NULL");
 
         appLog.info(String.format("running init sql (length: %d): %s", script.length(), script));
-        SqlSession.getCurrent().execute(script);
+        try (SqlSession session = new SqlSession(SqlSession.Mode.AUTO_COMMIT)) {
+            session.execute(script);
+        }
     }
 
     protected void parseCommandLine(String[] args, Properties props) {
@@ -459,11 +475,17 @@ public class Controller implements AutoCloseable {
 
             long start = System.nanoTime();
 
-            long ownerId = generateOwner();
-            System.out.println("\n------------------------------------------------");
-            report("Owner", 1, System.nanoTime() - start);
+            long ownerId;
+            long eventId;
+            long groupId;
 
-            long eventId = generateEvent(ownerId);
+            try (SqlSession session = new SqlSession(SqlSession.Mode.AUTO_COMMIT)) {
+                ownerId = generateOwner();
+                System.out.println("\n------------------------------------------------");
+                report("Owner", 1, System.nanoTime() - start);
+
+                eventId = generateEvent(ownerId);
+            }
 
             int groupCount = minGroups + random.nextInt(maxGroups - minGroups);
             appLog.info(String.format("Creating %d groups", groupCount));
@@ -477,7 +499,9 @@ public class Controller implements AutoCloseable {
             appLog.info(String.format("Creating %d Data records @ %d records per group", dataCount * groupCount, dataCount));
 
             for (int gx = 0; gx < groupCount; gx++) {
-                long groupId = generateGroup(eventId, gx);
+                try (SqlSession session = new SqlSession(SqlSession.Mode.AUTO_COMMIT)) {
+                    groupId = generateGroup(eventId, gx);
+                }
 
                 total += dataCount;
 
@@ -487,13 +511,16 @@ public class Controller implements AutoCloseable {
                     dataRows.put(data.getInstanceUID(), data);
                 }
 
-                long uniqueRows = dataRepository.checkUniqueness(dataRows);
-                appLog.info(String.format("%d rows out of %d new rows are unique", uniqueRows, dataCount));
-                groupRepository.update(groupId, "dataCount", uniqueRows);
+                try (SqlSession session = new SqlSession(SqlSession.Mode.AUTO_COMMIT)) {
+                    long uniqueRows = dataRepository.checkUniqueness(dataRows);
+
+                    appLog.info(String.format("%d rows out of %d new rows are unique", uniqueRows, dataCount));
+                    groupRepository.update(groupId, "dataCount", uniqueRows);
+                }
 
                 long dataStart = System.nanoTime();
                 int count = 0;
-                try (SqlSession session = SqlSession.start(bulkCommitMode)) {
+                try (SqlSession session = new SqlSession(bulkCommitMode)) {
                     for (Data data : dataRows.values()) {
                         dataRepository.persist(data);
                         count++;
@@ -578,12 +605,11 @@ public class Controller implements AutoCloseable {
         @Override
         public void run() {
 
-            long x = totalInserts;
+            //long x = totalInserts;
 
             viewLog.info(String.format("Running view query for event %d", eventId));
 
-
-            try (SqlSession session = SqlSession.start(SqlSession.Mode.AUTO_COMMIT)) {
+            try (SqlSession session = new SqlSession(SqlSession.Mode.AUTO_COMMIT)) {
 
                 long start = System.nanoTime();
                 EventDetails details = eventRepository.getDetails(eventId);

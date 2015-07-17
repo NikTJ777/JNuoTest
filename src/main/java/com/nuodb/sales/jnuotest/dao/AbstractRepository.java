@@ -1,10 +1,8 @@
 package com.nuodb.sales.jnuotest.dao;
 
 
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.SQLTransientException;
+import javax.sql.DataSource;
+import java.sql.*;
 import java.util.*;
 import java.util.logging.Logger;
 
@@ -60,6 +58,7 @@ public abstract class AbstractRepository<T extends Entity> implements Repository
     protected static String updateSql = "UPDATE %s SET %s = (%s) where id = '%d'";
 
     public AbstractRepository(String tableName, String... columns) {
+
         this.tableName = tableName;
         this.columns = columns;
 

@@ -3,48 +3,75 @@ package com.nuodb.sales.jnuotest.dao;
 
 import javax.sql.DataSource;
 import java.sql.*;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentSkipListSet;
+import java.util.logging.Logger;
 
 /**
  * Created by nik on 7/5/15.
  */
 public class SqlSession implements AutoCloseable {
 
-    private Mode mode;
+    private final Mode mode;
+
     private Connection connection;
-    private PreparedStatement  batch;
-    private Map<String, PreparedStatement> statements;
+    private PreparedStatement batch;
+    private List<PreparedStatement> statements;
 
     private static DataSource dataSource;
     private static ThreadLocal<SqlSession> current = new ThreadLocal<SqlSession>();
+    private static Map<SqlSession, String> sessions;
 
-    private SqlSession(Mode mode) {
-        this.mode = mode;
-    }
+    private static Logger log = Logger.getLogger("SqlSession");
+
+    //private SqlSession(Mode mode) {
+    //    this.mode = mode;
+    //}
 
     public enum Mode { AUTO_COMMIT, TRANSACTIONAL, BATCH };
 
-    public static void init(DataSource ds) {
+    public static void init(DataSource ds, int maxThreads) {
         dataSource = ds;
+        sessions = new ConcurrentHashMap<SqlSession, String>(maxThreads, 0.85f, 256);
     }
 
-    public static SqlSession start(Mode mode) {
-        SqlSession session = current.get();
+    public SqlSession(Mode mode) {
+        this.mode = mode;
 
+        SqlSession session = current.get();
         if (session != null) {
             session.close();
+            throw new PersistenceException("Previous session for this thread was not correctly closed");
         }
 
-        session = new SqlSession(mode);
-        current.set(session);
+        //session = new SqlSession(mode);
+        current.set(this);
+        sessions.put(this, Thread.currentThread().getName());
 
-        return session;
+        //return session;
+    }
+
+    public static void cleanup() {
+        if (sessions.size() == 0)
+            return;
+
+        int released = 0;
+        for (Map.Entry<SqlSession, String> entry : sessions.entrySet()) {
+            log.info(String.format("cleaning up unclosed session from %s", entry.getValue()));
+            entry.getKey().close();
+            released++;
+        }
+
+        throw new PersistenceException("%d unclosed SqlSessions were cleaned up", released);
     }
 
     public static SqlSession getCurrent() {
         SqlSession session = current.get();
-        return (session != null ? session : start(Mode.AUTO_COMMIT));
+        if (session == null)
+            throw new PersistenceException("No current session");
+
+        return session;
     }
 
     public void rollback() {
@@ -59,23 +86,31 @@ public class SqlSession implements AutoCloseable {
         closeStatements();
         closeConnection();
         current.set(null);
+        sessions.remove(this);
     }
 
     public PreparedStatement getStatement(String sql) throws SQLException {
-        if (statements == null) {
-            statements = new HashMap<String, PreparedStatement>(16);
+        if (batch != null) {
+            batch.clearParameters();
+            return batch;
         }
 
-        PreparedStatement ps = statements.get(sql);
+        if (statements == null) {
+            statements = new ArrayList<PreparedStatement>(16);
+            //statements = new HashMap<String, PreparedStatement>(16);
+        }
 
-        if (ps == null) {
+        //PreparedStatement ps = statements.get(sql);
+
+        //if (ps == null) {
             int returnMode = (mode == Mode.AUTO_COMMIT ? Statement.RETURN_GENERATED_KEYS : Statement.NO_GENERATED_KEYS);
             //int returnMode = Statement.RETURN_GENERATED_KEYS;
-            ps = connection().prepareStatement(sql, returnMode);
-            statements.put(sql, ps);
-        } else {
-            ps.clearParameters();
-        }
+            PreparedStatement ps = connection().prepareStatement(sql, returnMode);
+            statements.add(ps);
+            //statements.put(sql, ps);
+        //} else {
+        //    ps.clearParameters();
+        //}
 
         batch = (mode == Mode.BATCH ? ps : null);
 
@@ -136,7 +171,8 @@ public class SqlSession implements AutoCloseable {
 
         if (statements == null) return;
 
-        for (PreparedStatement ps : statements.values()) {
+        for (PreparedStatement ps : statements) {
+        //for (PreparedStatement ps : statements.values()) {
             try { ps.close(); } catch (Exception e) {}
         }
 

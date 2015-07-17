@@ -5,6 +5,7 @@ import com.nuodb.sales.jnuotest.dao.ConfigurationException;
 import com.nuodb.sales.jnuotest.dao.PersistenceException;
 import com.nuodb.sales.jnuotest.dao.SqlSession;
 
+import javax.sql.DataSource;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
