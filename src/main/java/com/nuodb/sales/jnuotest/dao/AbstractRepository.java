@@ -4,6 +4,7 @@ package com.nuodb.sales.jnuotest.dao;
 import javax.sql.DataSource;
 import java.sql.*;
 import java.util.*;
+import java.util.Date;
 import java.util.logging.Logger;
 
 /**
@@ -200,18 +201,40 @@ public abstract class AbstractRepository<T extends Entity> implements Repository
 
     protected abstract void mapOut(T entity, PreparedStatement sql) throws SQLException;
 
+    /**
+     * set parameters into a PreparedStatement
+     *
+     * @param sp PreparedStatement - the prepared statement to set the parameters into
+     * @param columns String - a comma-separated list of columns to update - in the form "a, b, c"
+     * @param values Object[] - the array of values to be set into the prepared statement - one per column name
+     *
+     * @throws PersistenceException if the number of values is less than the number of column names
+     * @throws SQLException if the PreparedStatement throws any exception
+     */
     protected void setParams(PreparedStatement sp, String columns, Object[] values)
         throws PersistenceException, SQLException
     {
         String[] fields = columns.split(", ");
-        if (fields.length < values.length)
-            throw new PersistenceException("Invalid update request: insufficient field names for values: %s, %a", columns, values);
+        if (values.length < fields.length)
+            throw new PersistenceException("Invalid update request: insufficient values for named columns: %s < %s", Arrays.toString(values), columns);
 
         for (int vx = 0; vx < values.length; vx++) {
             Class type = values[vx].getClass();
 
             if (type == Integer.class) {
                 sp.setInt(vx+1, (Integer) values[vx]);
+            }
+            else if (type == Long.class) {
+                sp.setLong(vx+1, (Long) values[vx]);
+            }
+            else if (type == String.class) {
+                sp.setString(vx+1, values[vx].toString());
+            }
+            else if (type == Boolean.class) {
+                sp.setBoolean(vx+1, (Boolean) values[vx]);
+            }
+            else if (type == Date.class) {
+                sp.setDate(vx+1, new java.sql.Date(((Date) values[vx]).getTime()));
             }
         }
     }

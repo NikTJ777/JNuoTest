@@ -136,9 +136,9 @@ public class Controller implements AutoCloseable {
         parseCommandLine(args, appProperties);
 
         if ("true".equalsIgnoreCase(appProperties.getProperty("help"))) {
-            System.out.println("java -jar <jarfilename> [option=value [, option=value, ...] ]\nwhere <option> can be any of:\n");
+            System.out.println("\njava -jar <jarfilename> [option=value [, option=value, ...] ]\nwhere <option> can be any of:\n");
 
-            String[] keys = defaultProperties.keySet().toArray(new String[0]);
+            String[] keys = appProperties.stringPropertyNames().toArray(new String[0]);
             Arrays.sort(keys);
             for (String key : keys) {
                 System.out.println(String.format("%s\t\t\t\t(default=%s)", key, defaultProperties.getProperty(key)));
@@ -158,8 +158,10 @@ public class Controller implements AutoCloseable {
 
         StringBuilder builder = new StringBuilder(1024);
         builder.append("\n***************** Resolved Properties ********************\n");
-        for (Object key : defaultProperties.keySet()) {
-            builder.append(String.format("%s = %s\n", key.toString(), appProperties.getProperty(key.toString())));
+        String[] keys = appProperties.stringPropertyNames().toArray(new String[0]);
+        Arrays.sort(keys);
+        for (String key : keys) {
+            builder.append(String.format("%s = %s\n", key, appProperties.getProperty(key)));
         }
         appLog.info(builder.toString() + "**********************************************************\n");
 
