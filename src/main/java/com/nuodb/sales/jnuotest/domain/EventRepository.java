@@ -78,6 +78,7 @@ public class EventRepository extends AbstractRepository<Event> {
             log.info(String.format("retrieved %d data records", data.size()));
 
         } catch (Exception e) {
+            e.printStackTrace(System.out);
             log.info(String.format("getDetails exception: %s", e.toString()));
             throw new PersistenceException(e, "Error retrieving EventView %d", eventId);
         }

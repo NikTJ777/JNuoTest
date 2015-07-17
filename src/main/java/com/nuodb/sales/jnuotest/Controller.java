@@ -261,7 +261,8 @@ public class Controller implements AutoCloseable {
             long eventId = 0;
 
             while (System.currentTimeMillis() < endTime) {
-                queryExecutor.schedule(new EventViewTask(eventId++), 100, TimeUnit.MILLISECONDS);
+                queryExecutor.schedule(new EventViewTask(eventId++), 10, TimeUnit.MILLISECONDS);
+                totalEvents++;
 
                 appLog.info(String.format("Processed %,d events containing %,d records in %.2f secs"
                                 + "\n\tThroughput:\t%.2f events/sec at %.2f ips;"
@@ -271,9 +272,13 @@ public class Controller implements AutoCloseable {
                         totalInserts /*.get()*/, (totalInsertTime/*.get()*/ / Nano2Seconds), (Nano2Seconds * totalInserts/*.get()*/ / totalInsertTime/*.get()*/),
                         totalQueries.get(), totalQueryRecords.get(), (totalQueryTime.get() / Nano2Seconds), (Nano2Seconds * totalQueries.get() / totalQueryTime.get())));
 
-                try {
-                    Thread.sleep((100));
-                } catch (InterruptedException e) {}
+                if (totalEvents + 10 > totalQueries.get()) {
+                    appLog.info(String.format("%d queries waiting - sleeping", totalEvents - totalQueries.get()));
+                    try {
+                        Thread.sleep((200));
+                    } catch (InterruptedException e) {
+                    }
+                }
             }
 
             return;
@@ -573,6 +578,8 @@ public class Controller implements AutoCloseable {
         @Override
         public void run() {
 
+            long x = totalInserts;
+
             viewLog.info(String.format("Running view query for event %d", eventId));
 
 
@@ -591,6 +598,7 @@ public class Controller implements AutoCloseable {
 
             } catch (PersistenceException e) {
                 viewLog.info(String.format("Error retrieving Event: %s", e.toString()));
+                e.printStackTrace(System.out);
             }
 
 
