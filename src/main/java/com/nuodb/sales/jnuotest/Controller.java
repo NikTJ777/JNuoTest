@@ -264,7 +264,7 @@ public class Controller implements AutoCloseable {
             long eventId = 0;
 
             while (System.currentTimeMillis() < endTime) {
-                queryExecutor.schedule(new EventViewTask(eventId++), 10, TimeUnit.MILLISECONDS);
+                queryExecutor.schedule(new EventViewTask(eventId++), 2, TimeUnit.MILLISECONDS);
                 totalEvents++;
 
                 appLog.info(String.format("Processed %,d events containing %,d records in %.2f secs"
@@ -275,6 +275,7 @@ public class Controller implements AutoCloseable {
                         totalInserts /*.get()*/, (totalInsertTime/*.get()*/ / Nano2Seconds), (Nano2Seconds * totalInserts/*.get()*/ / totalInsertTime/*.get()*/),
                         totalQueries.get(), totalQueryRecords.get(), (totalQueryTime.get() / Nano2Seconds), (Nano2Seconds * totalQueries.get() / totalQueryTime.get())));
 
+                //if (((ThreadPoolExecutor) queryExecutor).getQueue().size() > 10) {
                 if (totalEvents + 10 > totalQueries.get()) {
                     appLog.info(String.format("%d queries waiting - sleeping", totalEvents - totalQueries.get()));
                     try {
