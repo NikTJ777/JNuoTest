@@ -42,6 +42,7 @@ public class Controller implements AutoCloseable {
     int minBurst, maxBurst;
     int maxQueued;
     boolean initDb = false;
+    boolean queryOnly = false;
 
     SqlSession.Mode bulkCommitMode;
 
@@ -82,6 +83,7 @@ public class Controller implements AutoCloseable {
     public static final String DB_INIT =            "db.init";
     public static final String DB_INIT_SQL =        "db.init.sql";
     public static final String BULK_COMMIT_MODE =   "bulk.commit.mode";
+    public static final String QUERY_ONLY =         "query.only";
 
     private static Logger appLog = Logger.getLogger("JNuoTest");
     private static Logger insertLog = Logger.getLogger("InsertLog");
@@ -115,6 +117,7 @@ public class Controller implements AutoCloseable {
         defaultProperties.setProperty(RUN_TIME, "5");
         defaultProperties.setProperty(BULK_COMMIT_MODE, "BATCH");
         defaultProperties.setProperty(DB_INIT, "false");
+        defaultProperties.setProperty(QUERY_ONLY, "false");
     }
 
     public void configure(String[] args)
@@ -172,6 +175,7 @@ public class Controller implements AutoCloseable {
         maxBurst = Integer.parseInt(appProperties.getProperty(MAX_BURST));
         maxQueued = Integer.parseInt(appProperties.getProperty(MAX_QUEUED));
         initDb = Boolean.parseBoolean(appProperties.getProperty(DB_INIT));
+        queryOnly = Boolean.parseBoolean(appProperties.getProperty(QUERY_ONLY));
 
         if (maxViewAfterInsert > 0 && maxViewAfterInsert < minViewAfterInsert) {
             maxViewAfterInsert = minViewAfterInsert;
@@ -250,6 +254,31 @@ public class Controller implements AutoCloseable {
         long settleTime = 2 * Millis;
         appLog.info(String.format("Settling for %d: ", settleTime));
         Thread.sleep(settleTime);
+
+        // just run some queries
+        if (queryOnly) {
+
+            long eventId = 0;
+
+            while (System.currentTimeMillis() < endTime) {
+                queryExecutor.schedule(new EventViewTask(eventId++), 100, TimeUnit.MILLISECONDS);
+
+                appLog.info(String.format("Processed %,d events containing %,d records in %.2f secs"
+                                + "\n\tThroughput:\t%.2f events/sec at %.2f ips;"
+                                + "\n\tSpeed:\t\t%,d inserts in %.2f secs = %.2f ips"
+                                + "\n\tQueries:\t%,d queries accessing %,d records in %.2f secs at %.2f qps",
+                        totalEvents, totalInserts/*.get()*/, (wallTime / Millis2Seconds), (Millis2Seconds * totalEvents / wallTime), (Millis2Seconds * totalInserts/*.get()*/ / wallTime),
+                        totalInserts /*.get()*/, (totalInsertTime/*.get()*/ / Nano2Seconds), (Nano2Seconds * totalInserts/*.get()*/ / totalInsertTime/*.get()*/),
+                        totalQueries.get(), totalQueryRecords.get(), (totalQueryTime.get() / Nano2Seconds), (Nano2Seconds * totalQueries.get() / totalQueryTime.get())));
+
+                try {
+                    Thread.sleep((100));
+                } catch (InterruptedException e) {}
+            }
+
+            return;
+        }
+
 
         do {
             insertExecutor.execute(new EventGenerator(totalEvents++));
