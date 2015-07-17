@@ -110,7 +110,9 @@ public abstract class AbstractRepository<T extends Entity> implements Repository
         for (int retry = 0; ; retry++) {
             SqlSession session = SqlSession.getCurrent();
 
-            try (PreparedStatement update = session.getStatement(sql)) {
+            try {
+                PreparedStatement update = session.getStatement(sql);
+
                 mapOut(entity, update);
 
                 ResultSet keys = session.update(update);
@@ -168,12 +170,14 @@ public abstract class AbstractRepository<T extends Entity> implements Repository
         throws PersistenceException
     {
         List<T> result = new ArrayList(1024);
-        try (ResultSet row = queryBy(column, param)) {
-            while (row != null && row.next()) {
-                result.add(mapIn(row));
-            }
+        try (SqlSession session = SqlSession.getCurrent()) {
+            try (ResultSet row = queryBy(column, param)) {
+                while (row != null && row.next()) {
+                    result.add(mapIn(row));
+                }
 
-            return result;
+                return result;
+            }
         } catch (SQLException e) {
             throw new PersistenceException(e, "Error in find all %s by %s = '%s'", tableName, column, param.toString());
         }
@@ -184,7 +188,7 @@ public abstract class AbstractRepository<T extends Entity> implements Repository
     {
         StringBuilder sql = new StringBuilder().append(String.format(findBySql, tableName, column, param[0].toString()));
         for (int px = 1; px < param.length; px++) {
-            sql.append(String.format(" OR where %s = '%s'", column, param[px].toString()));
+            sql.append(String.format(" OR %s = '%s'", column, param[px].toString()));
         }
 
         return SqlSession.getCurrent().getStatement(sql.toString()).executeQuery();

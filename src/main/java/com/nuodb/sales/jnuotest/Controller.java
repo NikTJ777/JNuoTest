@@ -310,6 +310,7 @@ public class Controller implements AutoCloseable {
     public void close()
     {
         insertExecutor.shutdownNow();
+        queryExecutor.shutdownNow();
         try { insertExecutor.awaitTermination(10, TimeUnit.SECONDS); }
         catch (InterruptedException e) {
             System.out.println("Interrupted while waiting for shutdown - exiting");

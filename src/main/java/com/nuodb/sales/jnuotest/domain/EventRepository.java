@@ -65,6 +65,8 @@ public class EventRepository extends AbstractRepository<Event> {
             List<Group> groups = groupRepository.findAllBy("eventId", eventId);
             result.setGroups(groups);
 
+            log.info(String.format("retrieved %d groups", groups.size()));
+
             Long[] groupIds = new Long[groups.size()];
             for (int gx = 0; gx < groupIds.length; gx++) {
                 groupIds[gx] = groups.get(gx).getId();
@@ -72,6 +74,8 @@ public class EventRepository extends AbstractRepository<Event> {
 
             List<Data> data = dataRepository.findAllBy("groupId", groupIds);
             result.setData(data);
+
+            log.info(String.format("retrieved %d data records", data.size()));
 
         } catch (Exception e) {
             log.info(String.format("getDetails exception: %s", e.toString()));

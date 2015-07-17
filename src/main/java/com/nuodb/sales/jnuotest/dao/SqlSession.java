@@ -154,6 +154,8 @@ public class SqlSession implements AutoCloseable {
             }
 
             try { connection.close(); } catch (Exception e) {}
+
+            connection = null;
         }
     }
 }
