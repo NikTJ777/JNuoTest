@@ -56,7 +56,7 @@ public class EventRepository extends AbstractRepository<Event> {
         throws PersistenceException
     {
         EventDetails result = null;
-        try (SqlSession session = SqlSession.start(SqlSession.Mode.TRANSACTIONAL)) {
+        try (SqlSession session = SqlSession.start(SqlSession.Mode.AUTO_COMMIT)) {
 
             Event event = findById(eventId);
             Owner owner = ownerRepository.findById(event.getOwner());

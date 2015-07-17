@@ -170,14 +170,14 @@ public abstract class AbstractRepository<T extends Entity> implements Repository
         throws PersistenceException
     {
         List<T> result = new ArrayList(1024);
-        try (SqlSession session = SqlSession.getCurrent()) {
-            try (ResultSet row = queryBy(column, param)) {
-                while (row != null && row.next()) {
-                    result.add(mapIn(row));
-                }
+        SqlSession session = SqlSession.getCurrent();
 
-                return result;
+        try (ResultSet row = queryBy(column, param)) {
+            while (row != null && row.next()) {
+                result.add(mapIn(row));
             }
+
+            return result;
         } catch (SQLException e) {
             throw new PersistenceException(e, "Error in find all %s by %s = '%s'", tableName, column, param.toString());
         }
