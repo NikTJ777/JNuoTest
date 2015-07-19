@@ -48,15 +48,17 @@ public class Controller implements AutoCloseable {
 
     SqlSession.Mode bulkCommitMode;
 
-    volatile long totalInserts = 0;
-    volatile long totalInsertTime = 0;
+    //volatile long totalInserts = 0;
+    //volatile long totalInsertTime = 0;
 
-    //AtomicLong totalInserts = new AtomicLong();
-    //AtomicLong totalInsertTime = new AtomicLong();
+    AtomicLong totalInserts = new AtomicLong();
+    AtomicLong totalInsertTime = new AtomicLong();
 
     AtomicLong totalQueries = new AtomicLong();
     AtomicLong totalQueryRecords = new AtomicLong();
     AtomicLong totalQueryTime = new AtomicLong();
+
+    long unique;
 
     long totalEvents;
     long wallTime;
@@ -108,7 +110,7 @@ public class Controller implements AutoCloseable {
         defaultProperties.setProperty(TIMING_SPEEDUP, "1");
         defaultProperties.setProperty(INSERT_THREADS, "1");
         defaultProperties.setProperty(QUERY_THREADS, "1");
-        defaultProperties.setProperty(MAX_QUEUED, "1");
+        defaultProperties.setProperty(MAX_QUEUED, "0");
         defaultProperties.setProperty(MIN_GROUPS, "1");
         defaultProperties.setProperty(MAX_GROUPS, "5");
         defaultProperties.setProperty(MIN_DATA, "500");
@@ -229,7 +231,15 @@ public class Controller implements AutoCloseable {
     public void init() {
         if (initDb) {
             initializeDatabase();
+            unique = 1;
+        } else {
+            try (SqlSession session = new SqlSession(SqlSession.Mode.AUTO_COMMIT)) {
+                String lastEventId = eventRepository.getValue("id", "ORDER BY id DESC LIMIT 1");
+                unique = Long.parseLong(lastEventId) + 1;
+                appLog.info(String.format("lastEventID = %s", lastEventId));
+            }
         }
+
     }
 
     /**
@@ -261,7 +271,7 @@ public class Controller implements AutoCloseable {
         // just run some queries
         if (queryOnly) {
 
-            long eventId = 0;
+            long eventId = 1;
 
             while (System.currentTimeMillis() < endTime) {
                 queryExecutor.schedule(new EventViewTask(eventId++), 2, TimeUnit.MILLISECONDS);
@@ -271,8 +281,8 @@ public class Controller implements AutoCloseable {
                                 + "\n\tThroughput:\t%.2f events/sec at %.2f ips;"
                                 + "\n\tSpeed:\t\t%,d inserts in %.2f secs = %.2f ips"
                                 + "\n\tQueries:\t%,d queries got %,d records in %.2f secs at %.2f qps",
-                        totalEvents, totalInserts/*.get()*/, (wallTime / Millis2Seconds), (Millis2Seconds * totalEvents / wallTime), (Millis2Seconds * totalInserts/*.get()*/ / wallTime),
-                        totalInserts /*.get()*/, (totalInsertTime/*.get()*/ / Nano2Seconds), (Nano2Seconds * totalInserts/*.get()*/ / totalInsertTime/*.get()*/),
+                        totalEvents, totalInserts.get(), (wallTime / Millis2Seconds), (Millis2Seconds * totalEvents / wallTime), (Millis2Seconds * totalInserts.get() / wallTime),
+                        totalInserts.get(), (totalInsertTime.get() / Nano2Seconds), (Nano2Seconds * totalInserts.get() / totalInsertTime.get()),
                         totalQueries.get(), totalQueryRecords.get(), (totalQueryTime.get() / Nano2Seconds), (Nano2Seconds * totalQueries.get() / totalQueryTime.get())));
 
                 //if (((ThreadPoolExecutor) queryExecutor).getQueue().size() > 10) {
@@ -290,7 +300,9 @@ public class Controller implements AutoCloseable {
 
 
         do {
-            insertExecutor.execute(new EventGenerator(totalEvents++));
+            insertExecutor.execute(new EventGenerator(unique++));
+
+            totalEvents++;
 
             appLog.info(String.format("Event scheduled. Queue size=%d", ((ThreadPoolExecutor) insertExecutor).getQueue().size()));
 
@@ -322,9 +334,9 @@ public class Controller implements AutoCloseable {
                     Thread.sleep(sleepTime);
                 }
 
-                while (maxQueued > 0 && ((ThreadPoolExecutor) insertExecutor).getQueue().size() > maxQueued) {
+                while (maxQueued >= 0 && ((ThreadPoolExecutor) insertExecutor).getQueue().size() > maxQueued) {
                     appLog.info(String.format("Queue size %d is over limit %d - sleeping", ((ThreadPoolExecutor) insertExecutor).getQueue().size(), maxQueued));
-                    Thread.sleep(1 * Millis / 2);
+                    Thread.sleep(1 * Millis / (((ThreadPoolExecutor) insertExecutor).getQueue().size() > 1 ? 2 : 20));
                 }
 
                 appLog.info(String.format("Sleeping done. Queue size=%d", ((ThreadPoolExecutor) insertExecutor).getQueue().size()));
@@ -337,8 +349,8 @@ public class Controller implements AutoCloseable {
                             + "\n\tThroughput:\t%.2f events/sec at %.2f ips;"
                             + "\n\tSpeed:\t\t%,d inserts in %.2f secs = %.2f ips"
                             + "\n\tQueries:\t%,d queries got %,d records in %.2f secs at %.2f qps",
-                    totalEvents, totalInserts/*.get()*/, (wallTime / Millis2Seconds), (Millis2Seconds * totalEvents / wallTime), (Millis2Seconds * totalInserts/*.get()*/ / wallTime),
-                    totalInserts /*.get()*/, (totalInsertTime/*.get()*/ / Nano2Seconds), (Nano2Seconds * totalInserts/*.get()*/ / totalInsertTime/*.get()*/),
+                    totalEvents, totalInserts.get(), (wallTime / Millis2Seconds), (Millis2Seconds * totalEvents / wallTime), (Millis2Seconds * totalInserts.get() / wallTime),
+                    totalInserts.get(), (totalInsertTime.get() / Nano2Seconds), (Nano2Seconds * totalInserts.get() / totalInsertTime.get()),
                     totalQueries.get(), totalQueryRecords.get(), (totalQueryTime.get() / Nano2Seconds), (Nano2Seconds * totalQueries.get() / totalQueryTime.get())));
 
 
@@ -363,8 +375,8 @@ public class Controller implements AutoCloseable {
                         + "\n\tSpeed:\t\t%,d inserts in %.2f secs = %.2f ips"
                         + "\n\tQueries:\t%,d queries got %,d records in %.2f secs at %.2f qps",
                 ((ThreadPoolExecutor) insertExecutor).getQueue().size(),
-                totalEvents, totalInserts/*.get()*/, (wallTime / Millis2Seconds), (Millis2Seconds * totalEvents / wallTime), (Millis2Seconds * totalInserts/*.get()*/ / wallTime),
-                totalInserts /*.get()*/, (totalInsertTime/*.get()*/ / Nano2Seconds), (Nano2Seconds * totalInserts/*.get()*/ / totalInsertTime/*.get()*/),
+                totalEvents, totalInserts.get(), (wallTime / Millis2Seconds), (Millis2Seconds * totalEvents / wallTime), (Millis2Seconds * totalInserts.get() / wallTime),
+                totalInserts.get(), (totalInsertTime.get() / Nano2Seconds), (Nano2Seconds * totalInserts.get() / totalInsertTime.get()),
                 totalQueries.get(), totalQueryRecords.get(), (totalQueryTime.get() / Nano2Seconds), (Nano2Seconds * totalQueries.get() / totalQueryTime.get())));
 
         //appLog.info(String.format("Exiting with %d items remaining in the queue.\n\tProcessed %,d events containing %,d records in %.2f secs\n\tThroughput:\t%.2f events/sec at %.2f ips;\n\tSpeed:\t\t%,d inserts in %.2f secs = %.2f ips",
@@ -539,11 +551,11 @@ public class Controller implements AutoCloseable {
             long duration = System.nanoTime() - start;
             report("All Data", total, duration);
 
-            totalInserts += total;
-            totalInsertTime += duration;
+            //totalInserts += total;
+            //totalInsertTime += duration;
 
-            //totalInserts.addAndGet(total);
-            //totalInsertTime.addAndGet(duration);
+            totalInserts.addAndGet(total);
+            totalInsertTime.addAndGet(duration);
 
             scheduleViewTask(eventId);
         }

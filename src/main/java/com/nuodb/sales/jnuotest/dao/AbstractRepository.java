@@ -58,6 +58,14 @@ public abstract class AbstractRepository<T extends Entity> implements Repository
      */
     protected static String updateSql = "UPDATE %s SET %s = (%s) where id = '%d'";
 
+    /**
+     * sql statement to retrieve a single column value
+     * @param column - String name of column to retrieve
+     * @param tableName - String the table to query (resolved with the tableName ni this AbstractRepository object
+     * @param criteria - String SQL clauses to specify which column to select
+     */
+    protected static final String getSql = "SELECT %s from %s %s";
+
     public AbstractRepository(String tableName, String... columns) {
 
         this.tableName = tableName;
@@ -180,6 +188,27 @@ public abstract class AbstractRepository<T extends Entity> implements Repository
             return result;
         } catch (SQLException e) {
             throw new PersistenceException(e, "Error in find all %s by %s = '%s'", tableName, column, param.toString());
+        }
+    }
+
+    // SELECT %column from tableName %criteria
+    public String getValue(String column, String criteria)
+        throws PersistenceException
+    {
+        SqlSession session = SqlSession.getCurrent();
+
+        try (PreparedStatement sql = session.getStatement(String.format(getSql, column, getTableName(), criteria))) {
+            try (ResultSet row = sql.executeQuery()) {
+                if (row.next()) {
+                    return row.getString(1);
+                } else {
+                    throw new PersistenceException("No matching value found: select %s from %s %s",
+                        column, getTableName(), criteria);
+                }
+            }
+        } catch (SQLException e) {
+            throw new PersistenceException(e, "Error querying for single value: %s from %s %s",
+                    column, getTableName(), criteria);
         }
     }
 
