@@ -360,15 +360,17 @@ public class Controller implements AutoCloseable {
     public void close()
     {
         insertExecutor.shutdownNow();
-        queryExecutor.shutdownNow();
 
         try {
             insertExecutor.awaitTermination(10, TimeUnit.SECONDS);
+
+            queryExecutor.shutdownNow();
             queryExecutor.awaitTermination(10, TimeUnit.SECONDS);
         }
         catch (InterruptedException e) {
             System.out.println("Interrupted while waiting for shutdown - exiting");
         }
+
 
         appLog.info(String.format("Exiting with %d items remaining in the queue.\n\tProcessed %,d events containing %,d records in %.2f secs"
                         + "\n\tThroughput:\t%.2f events/sec at %.2f ips;"

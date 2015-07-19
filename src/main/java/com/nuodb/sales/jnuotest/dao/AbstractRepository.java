@@ -165,15 +165,8 @@ public abstract class AbstractRepository<T extends Entity> implements Repository
         }
     }
 
-    /**
-     * Execute a query.
-     *
-     * @param column String - name of the column to query
-     * @param param Object - value of the column to query
-     *
-     * @return ResultSet containing the result(s) of the query
-     * @throws SQLException if an error occurs in creating or executing the query
-     */
+
+    @Override
     public List<T> findAllBy(String column, Object ... param)
         throws PersistenceException
     {
@@ -191,7 +184,7 @@ public abstract class AbstractRepository<T extends Entity> implements Repository
         }
     }
 
-    // SELECT %column from tableName %criteria
+    @Override
     public String getValue(String column, String criteria)
         throws PersistenceException
     {
