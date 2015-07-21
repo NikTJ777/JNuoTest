@@ -123,10 +123,10 @@ public abstract class AbstractRepository<T extends Entity> implements Repository
 
                 mapOut(entity, update);
 
-                ResultSet keys = session.update(update);
-
-                if (keys != null && keys.next()) {
-                    return keys.getLong(1);
+                try (ResultSet keys = session.update(update)) {
+                    if (keys != null && keys.next()) {
+                        return keys.getLong(1);
+                    }
                 }
 
                 return 0;
