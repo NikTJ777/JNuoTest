@@ -14,8 +14,8 @@ public class Event extends Entity {
 
     private String name;
     private String description;
-
     private Date date;
+    private String region;
 
     protected Event(long id, String name) {
         super(id);
@@ -59,5 +59,13 @@ public class Event extends Entity {
 
     public void setDate(Date date) {
         this.date = date;
+    }
+
+    public String getRegion() {
+        return region;
+    }
+
+    public void setRegion(String region) {
+        this.region = region;
     }
 }

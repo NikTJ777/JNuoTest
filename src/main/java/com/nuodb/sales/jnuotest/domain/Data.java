@@ -13,6 +13,7 @@ public class Data extends Entity {
     private String description;
     private String path;
     private boolean active = true;
+    private String regionWeek;
 
     protected Data(long id, String name) {
         super(id);
@@ -69,5 +70,13 @@ public class Data extends Entity {
 
     public void setActive(boolean active) {
         this.active = active;
+    }
+
+    public String getRegionWeek() {
+        return regionWeek;
+    }
+
+    public void setRegionWeek(String regionWeek) {
+        this.regionWeek = regionWeek;
     }
 }

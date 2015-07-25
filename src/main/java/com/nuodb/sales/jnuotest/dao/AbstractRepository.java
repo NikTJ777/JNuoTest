@@ -160,6 +160,8 @@ public abstract class AbstractRepository<T extends Entity> implements Repository
         SqlSession session = SqlSession.getCurrent();
         try (PreparedStatement update = session.getStatement(sql)) {
             setParams(update, columns, values);
+
+            // TODO !! If this method *Must* return a ResultSet, then clean this one up!!
             session.update(update);
         } catch (SQLException e) {
             throw new PersistenceException(e, "Error updating table %s, id %d", getTableName(), id);

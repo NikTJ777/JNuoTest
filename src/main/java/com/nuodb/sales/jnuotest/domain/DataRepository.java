@@ -17,7 +17,7 @@ import java.util.Map;
 public class DataRepository extends AbstractRepository<Data> {
 
     public DataRepository() {
-        super("NuoTest.T_DATA", "groupId", "instanceUID", "name", "description", "path", "active");
+        super("NuoTest.T_DATA", "groupId", "instanceUID", "name", "description", "path", "active", "regionWeek");
     }
 
     @Override
@@ -70,6 +70,7 @@ public class DataRepository extends AbstractRepository<Data> {
         data.setDescription(row.getString("description"));
         data.setPath(row.getString("path"));
         data.setActive(row.getBoolean("active"));
+        data.setRegionWeek(row.getString("regionWeek"));
 
         return data;
     }
@@ -82,5 +83,6 @@ public class DataRepository extends AbstractRepository<Data> {
         update.setString(4, data.getDescription());
         update.setString(5, data.getPath());
         update.setBoolean(6, data.isActive());
+        update.setString(7, data.getRegionWeek());
     }
 }

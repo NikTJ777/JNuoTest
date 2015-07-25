@@ -15,8 +15,9 @@ public class Group extends Entity {
     private String description;
 
     private int dataCount;
-
     private Date date;
+    private String region;
+    private long week;
 
     protected Group(long id, String name) {
         super(id);
@@ -66,5 +67,21 @@ public class Group extends Entity {
 
     public void setDate(Date date) {
         this.date = date;
+    }
+
+    public String getRegion() {
+        return region;
+    }
+
+    public void setRegion(String region) {
+        this.region = region;
+    }
+
+    public long getWeek() {
+        return week;
+    }
+
+    public void setWeek(long week) {
+        this.week = week;
     }
 }

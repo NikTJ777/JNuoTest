@@ -21,7 +21,7 @@ public class EventRepository extends AbstractRepository<Event> {
     private DataRepository dataRepository;
 
     public EventRepository(OwnerRepository ownerRepository, GroupRepository groupRepository, DataRepository dataRepository) {
-        super("NuoTest.T_EVENT", "ownerId", "name", "description", "date");
+        super("NuoTest.T_EVENT", "ownerId", "name", "description", "date", "region");
 
         this.ownerRepository = ownerRepository;
         this.groupRepository = groupRepository;
@@ -86,6 +86,7 @@ public class EventRepository extends AbstractRepository<Event> {
         event.setOwner(row.getLong("ownerId"));
         event.setDescription(row.getString("description"));
         event.setDate(row.getDate("date"));
+        event.setRegion(row.getString("region"));
 
         return event;
     }
@@ -96,5 +97,6 @@ public class EventRepository extends AbstractRepository<Event> {
         update.setString(2, event.getName());
         update.setString(3, event.getDescription());
         update.setDate(4, new java.sql.Date(event.getDate().getTime()));
+        update.setString(5, event.getRegion());
     }
 }

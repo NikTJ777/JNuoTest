@@ -9,6 +9,7 @@ public class Owner extends Entity {
 
     private String name;
     private long masterAliasId;
+    private String region;
 
     protected Owner(long id, String name) {
         super(id);
@@ -35,4 +36,11 @@ public class Owner extends Entity {
         return masterAliasId;
     }
 
+    public String getRegion() {
+        return region;
+    }
+
+    public void setRegion(String region) {
+        this.region = region;
+    }
 }

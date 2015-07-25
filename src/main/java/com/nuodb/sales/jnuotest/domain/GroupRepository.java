@@ -16,7 +16,7 @@ import java.util.Date;
 public class GroupRepository extends AbstractRepository<Group> {
 
     public GroupRepository() {
-        super("NuoTest.T_GROUP", "eventId", "name", "description", "dataCount", "date");
+        super("NuoTest.T_GROUP", "eventId", "name", "description", "dataCount", "date", "region", "week");
     }
 
     @Override
@@ -31,6 +31,8 @@ public class GroupRepository extends AbstractRepository<Group> {
         group.setDescription(row.getString("description"));
         group.setDataCount(row.getInt("dataCount"));
         group.setDate(row.getDate("date"));
+        group.setRegion(row.getString("region"));
+        group.setWeek(row.getLong("week"));
 
         return group;
     }
@@ -42,5 +44,7 @@ public class GroupRepository extends AbstractRepository<Group> {
         update.setString(3, group.getDescription());
         update.setInt(4, group.getDataCount());
         update.setDate(5, new java.sql.Date(group.getDate().getTime()));
+        update.setString(6, group.getRegion());
+        update.setLong(7, group.getWeek());
     }
 }
