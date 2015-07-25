@@ -123,13 +123,7 @@ public abstract class AbstractRepository<T extends Entity> implements Repository
 
                 mapOut(entity, update);
 
-                try (ResultSet keys = session.update(update)) {
-                    if (keys != null && keys.next()) {
-                        return keys.getLong(1);
-                    }
-                }
-
-                return 0;
+                return session.update(update);
             } catch (SQLTransientException te) {
                 if (retry < maxRetry) {
                     log.info(String.format("Retriable exception in persist: %s; retrying...", te.toString()));
@@ -160,8 +154,6 @@ public abstract class AbstractRepository<T extends Entity> implements Repository
         SqlSession session = SqlSession.getCurrent();
         try (PreparedStatement update = session.getStatement(sql)) {
             setParams(update, columns, values);
-
-            // TODO !! If this method *Must* return a ResultSet, then clean this one up!!
             session.update(update);
         } catch (SQLException e) {
             throw new PersistenceException(e, "Error updating table %s, id %d", getTableName(), id);

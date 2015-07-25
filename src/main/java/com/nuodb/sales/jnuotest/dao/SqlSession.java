@@ -90,7 +90,7 @@ public class SqlSession implements AutoCloseable {
     }
 
     public PreparedStatement getStatement(String sql) throws SQLException {
-        if (batch != null) {
+        if (mode == Mode.BATCH && batch != null) {
             batch.clearParameters();
             return batch;
         }
@@ -128,6 +128,8 @@ public class SqlSession implements AutoCloseable {
 
             for (String line : lines) {
                 command = line.trim();
+                if (command.charAt(0) == '#') continue; // ignore comment lines
+
                 System.out.println(String.format("executing statement %s", command));
                 sql.execute(command);
             }
@@ -139,16 +141,27 @@ public class SqlSession implements AutoCloseable {
         }
     }
 
-    public ResultSet update(PreparedStatement statement)
+    public long update(PreparedStatement statement)
         throws SQLException
     {
         if (mode == Mode.BATCH) {
             statement.addBatch();
         } else {
             statement.executeUpdate();
+
+            if (mode == Mode.AUTO_COMMIT) {
+                try (ResultSet keys = statement.getGeneratedKeys()) {
+                    if (keys != null && keys.next()) {
+                        return keys.getLong(1);
+                    }
+
+                    return (keys != null && keys.next() == true ? keys.getLong(1) : 0);
+                }
+            }
         }
 
-        return (mode == Mode.AUTO_COMMIT ? statement.getGeneratedKeys() : null);
+        return 0;
+        //return (mode == Mode.AUTO_COMMIT ? statement.getGeneratedKeys() : null);
     }
 
     protected Connection connection()
