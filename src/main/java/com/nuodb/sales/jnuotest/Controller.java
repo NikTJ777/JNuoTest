@@ -124,6 +124,7 @@ public class Controller implements AutoCloseable {
         defaultProperties.setProperty(DB_INIT, "false");
         defaultProperties.setProperty(QUERY_ONLY, "false");
         defaultProperties.setProperty(QUERY_BACKOFF, "0");
+        defaultProperties.setProperty(INSERT_ISOLATION, "CONSISTENT_READ");
     }
 
     public void configure(String[] args)
@@ -201,8 +202,9 @@ public class Controller implements AutoCloseable {
             burstProbability = minBurst = maxBurst = 0;
         }
 
+        String insertIsolation = appProperties.getProperty(INSERT_ISOLATION);
         DataSource dataSource = new com.nuodb.jdbc.DataSource(appProperties);
-        SqlSession.init(dataSource, insertThreads + queryThreads);
+        SqlSession.init(dataSource, insertIsolation, insertThreads + queryThreads);
 
         ownerRepository = new OwnerRepository();
         ownerRepository.init();

@@ -1,6 +1,8 @@
 package com.nuodb.sales.jnuotest.dao;
 
 
+import com.nuodb.jdbc.TransactionIsolation;
+
 import javax.sql.DataSource;
 import java.sql.*;
 import java.util.*;
@@ -15,12 +17,14 @@ public class SqlSession implements AutoCloseable {
 
     private final Mode mode;
     private final Mode commitMode;
+    private int getUpdateIsolation;
 
     private Connection connection;
     private PreparedStatement batch;
     private List<PreparedStatement> statements;
 
     private static DataSource dataSource;
+    private static int updateIsolation;
     private static ThreadLocal<SqlSession> current = new ThreadLocal<SqlSession>();
     private static Map<SqlSession, String> sessions;
 
@@ -32,9 +36,25 @@ public class SqlSession implements AutoCloseable {
 
     public enum Mode { AUTO_COMMIT, TRANSACTIONAL, BATCH, READ_ONLY };
 
-    public static void init(DataSource ds, int maxThreads) {
+    public static void init(DataSource ds, String isolation, int maxThreads) {
         dataSource = ds;
         sessions = new ConcurrentHashMap<SqlSession, String>(maxThreads, 0.85f, 256);
+
+        switch (isolation) {
+            case "READ_COMMITTED":
+                updateIsolation = Connection.TRANSACTION_READ_COMMITTED;
+                break;
+
+            case "SERIALIZABLE":
+                updateIsolation = Connection.TRANSACTION_SERIALIZABLE;
+
+            case "CONSISTENT_READ":
+                updateIsolation = TransactionIsolation.TRANSACTION_CONSISTENT_READ;
+                break;
+
+            case "WRITE_COMMITTED":
+                updateIsolation = TransactionIsolation.TRANSACTION_WRITE_COMMITTED;
+        }
     }
 
     public SqlSession(Mode mode) {
@@ -178,10 +198,14 @@ public class SqlSession implements AutoCloseable {
                     connection.setAutoCommit(true);
                     break;
                 case AUTO_COMMIT:
+                    connection.setReadOnly(false);
                     connection.setAutoCommit(true);
+                    connection.setTransactionIsolation(updateIsolation);
                     break;
                 default:
+                    connection.setReadOnly(false);
                     connection.setAutoCommit(false);
+                    connection.setTransactionIsolation(updateIsolation);
             }
         }
 
