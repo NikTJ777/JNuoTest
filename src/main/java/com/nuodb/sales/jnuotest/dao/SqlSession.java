@@ -14,6 +14,7 @@ import java.util.logging.Logger;
 public class SqlSession implements AutoCloseable {
 
     private final Mode mode;
+    private final Mode commitMode;
 
     private Connection connection;
     private PreparedStatement batch;
@@ -29,7 +30,7 @@ public class SqlSession implements AutoCloseable {
     //    this.mode = mode;
     //}
 
-    public enum Mode { AUTO_COMMIT, TRANSACTIONAL, BATCH };
+    public enum Mode { AUTO_COMMIT, TRANSACTIONAL, BATCH, READ_ONLY };
 
     public static void init(DataSource ds, int maxThreads) {
         dataSource = ds;
@@ -38,6 +39,7 @@ public class SqlSession implements AutoCloseable {
 
     public SqlSession(Mode mode) {
         this.mode = mode;
+        commitMode = (mode == Mode.AUTO_COMMIT || mode == Mode.READ_ONLY ? Mode.AUTO_COMMIT : Mode.TRANSACTIONAL);
 
         SqlSession session = current.get();
         if (session != null) {
@@ -75,7 +77,7 @@ public class SqlSession implements AutoCloseable {
     }
 
     public void rollback() {
-        if (connection != null && mode != Mode.AUTO_COMMIT) {
+        if (connection != null && commitMode != Mode.AUTO_COMMIT) {
             try { connection.rollback(); }
             catch (SQLException e) {}
         }
@@ -103,7 +105,7 @@ public class SqlSession implements AutoCloseable {
         //PreparedStatement ps = statements.get(sql);
 
         //if (ps == null) {
-            int returnMode = (mode == Mode.AUTO_COMMIT ? Statement.RETURN_GENERATED_KEYS : Statement.NO_GENERATED_KEYS);
+            int returnMode = (commitMode == Mode.AUTO_COMMIT ? Statement.RETURN_GENERATED_KEYS : Statement.NO_GENERATED_KEYS);
             //int returnMode = Statement.RETURN_GENERATED_KEYS;
             PreparedStatement ps = connection().prepareStatement(sql, returnMode);
             statements.add(ps);
@@ -149,7 +151,7 @@ public class SqlSession implements AutoCloseable {
         } else {
             statement.executeUpdate();
 
-            if (mode == Mode.AUTO_COMMIT) {
+            if (commitMode == Mode.AUTO_COMMIT) {
                 try (ResultSet keys = statement.getGeneratedKeys()) {
                     if (keys != null && keys.next()) {
                         return keys.getLong(1);
@@ -169,6 +171,18 @@ public class SqlSession implements AutoCloseable {
     {
         if (connection == null) {
             connection = dataSource.getConnection();
+            switch (mode) {
+                case READ_ONLY:
+                    connection.setReadOnly(true);
+                    connection.setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
+                    connection.setAutoCommit(true);
+                    break;
+                case AUTO_COMMIT:
+                    connection.setAutoCommit(true);
+                    break;
+                default:
+                    connection.setAutoCommit(false);
+            }
         }
 
         assert connection != null;
@@ -195,7 +209,7 @@ public class SqlSession implements AutoCloseable {
     protected void closeConnection()
     {
         if (connection != null) {
-            if (mode != Mode.AUTO_COMMIT) {
+            if (commitMode != Mode.AUTO_COMMIT) {
                 try { connection.commit(); }
                 catch (SQLException e) {
                     throw new PersistenceException(e, "Error commiting JDBC connection");

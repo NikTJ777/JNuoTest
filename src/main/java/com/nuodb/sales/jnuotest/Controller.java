@@ -10,8 +10,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.sql.Connection;
-import java.sql.SQLException;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
@@ -32,6 +30,7 @@ public class Controller implements AutoCloseable {
     ExecutorService insertExecutor;
     ScheduledExecutorService queryExecutor;
 
+
     Properties fileProperties;
     Properties appProperties;
 
@@ -42,7 +41,7 @@ public class Controller implements AutoCloseable {
     int minData, maxData;
     float burstProbability;
     int minBurst, maxBurst;
-    int maxQueued;
+    int maxQueued, queryBackoff;
     boolean initDb = false;
     boolean queryOnly = false;
 
@@ -74,7 +73,7 @@ public class Controller implements AutoCloseable {
     public static final String TIMING_SPEEDUP =     "timing.speedup";
     public static final String INSERT_THREADS =     "insert.threads";
     public static final String QUERY_THREADS =      "query.threads";
-    public static final String MAX_QUEUED =          "max.queued";
+    public static final String MAX_QUEUED =         "max.queued";
     public static final String DB_PROPERTIES_PATH = "db.properties.path";
     public static final String RUN_TIME =           "run.time";
     public static final String MIN_GROUPS =         "min.groups";
@@ -88,6 +87,8 @@ public class Controller implements AutoCloseable {
     public static final String DB_INIT_SQL =        "db.init.sql";
     public static final String BULK_COMMIT_MODE =   "bulk.commit.mode";
     public static final String QUERY_ONLY =         "query.only";
+    public static final String QUERY_BACKOFF =      "query.backoff";
+    public static final String INSERT_ISOLATION =   "insert.isolation";
 
     private static Logger appLog = Logger.getLogger("JNuoTest");
     private static Logger insertLog = Logger.getLogger("InsertLog");
@@ -122,6 +123,7 @@ public class Controller implements AutoCloseable {
         defaultProperties.setProperty(BULK_COMMIT_MODE, "BATCH");
         defaultProperties.setProperty(DB_INIT, "false");
         defaultProperties.setProperty(QUERY_ONLY, "false");
+        defaultProperties.setProperty(QUERY_BACKOFF, "0");
     }
 
     public void configure(String[] args)
@@ -182,6 +184,7 @@ public class Controller implements AutoCloseable {
         maxQueued = Integer.parseInt(appProperties.getProperty(MAX_QUEUED));
         initDb = Boolean.parseBoolean(appProperties.getProperty(DB_INIT));
         queryOnly = Boolean.parseBoolean(appProperties.getProperty(QUERY_ONLY));
+        queryBackoff = Integer.parseInt(appProperties.getProperty(QUERY_BACKOFF));
 
         String threadParam = appProperties.getProperty(INSERT_THREADS);
         int insertThreads = (threadParam != null ? Integer.parseInt(threadParam) : 1);
@@ -628,7 +631,7 @@ public class Controller implements AutoCloseable {
 
             viewLog.info(String.format("Running view query for event %d", eventId));
 
-            try (SqlSession session = new SqlSession(SqlSession.Mode.AUTO_COMMIT)) {
+            try (SqlSession session = new SqlSession(SqlSession.Mode.READ_ONLY)) {
 
                 long start = System.nanoTime();
                 EventDetails details = eventRepository.getDetails(eventId);
@@ -647,12 +650,10 @@ public class Controller implements AutoCloseable {
             }
 
 
-            /*
-            if (((ThreadPoolExecutor) insertExecutor).getQueue().size() > maxQueued) {
-                appLog.info(String.format("Queue size > maxQueued (%d); sleeping...", maxQueued));
-                try { Thread.sleep(100); } catch (InterruptedException e) {}
+            if (queryBackoff > 0 && ((ThreadPoolExecutor) insertExecutor).getQueue().size() > maxQueued) {
+                appLog.info(String.format("(query) Queue size > maxQueued (%d); sleeping for %d ms...", maxQueued, queryBackoff));
+                try { Thread.sleep(queryBackoff); } catch (InterruptedException e) {}
             }
-            */
         }
     }
 }
