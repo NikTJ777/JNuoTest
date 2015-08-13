@@ -8,7 +8,6 @@ import java.util.Date;
  * Created by nik on 7/2/15.
  */
 public class Event extends Entity {
-    private long id;
 
     private long ownerId;
 
@@ -23,10 +22,6 @@ public class Event extends Entity {
 
     public Event() {
         super();
-    }
-
-    public long getId() {
-        return id;
     }
 
     public long getOwner() {

@@ -47,7 +47,10 @@ public class DataRepository extends AbstractRepository<Data> {
         int total = dataRows.size();
 
         //String sql = String.format(findBySql, getTableName(), "groupId", String.valueOf(data.getGroup()));
+        long queryStart = System.currentTimeMillis();
         try (ResultSet existing = queryBy("groupId", data.getGroup())) {
+            log.info(String.format("Uniqueness query complete; duration=%d ms", System.currentTimeMillis() - queryStart));
+            long readStart = System.currentTimeMillis();
             while (existing.next()) {
                 data = dataRows.get(existing.getString("instanceUID"));
                 if (data != null) {
@@ -55,6 +58,7 @@ public class DataRepository extends AbstractRepository<Data> {
                     total--;
                 }
             }
+            log.info(String.format("Uniqueness loop checked %d items; duration=%d ms", dataRows.size(), System.currentTimeMillis() - readStart));
 
             return total;
         } catch (SQLException e) {

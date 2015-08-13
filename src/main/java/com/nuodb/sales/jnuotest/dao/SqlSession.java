@@ -2,12 +2,12 @@ package com.nuodb.sales.jnuotest.dao;
 
 
 import com.nuodb.jdbc.TransactionIsolation;
+import com.nuodb.sales.jnuotest.Controller;
 
 import javax.sql.DataSource;
 import java.sql.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.logging.Logger;
 
 /**
@@ -17,14 +17,17 @@ public class SqlSession implements AutoCloseable {
 
     private final Mode mode;
     private final Mode commitMode;
-    private int getUpdateIsolation;
+    private final String type;
 
     private Connection connection;
     private PreparedStatement batch;
     private List<PreparedStatement> statements;
 
-    private static DataSource dataSource;
+    private static Map<String, Properties> connectionProperties = new HashMap<String, Properties>(16);
+    private static Map<String, DataSource> dataSources;
+
     private static int updateIsolation;
+
     private static ThreadLocal<SqlSession> current = new ThreadLocal<SqlSession>();
     private static Map<SqlSession, String> sessions;
 
@@ -36,10 +39,52 @@ public class SqlSession implements AutoCloseable {
 
     public enum Mode { AUTO_COMMIT, TRANSACTIONAL, BATCH, READ_ONLY };
 
-    public static void init(DataSource ds, String isolation, int maxThreads) {
-        dataSource = ds;
+    private static final String DEFAULT_DATASOURCE = "DEFAULT";
+
+    public static void init(Properties properties, int maxThreads) {
+
+        log.info("\n******************* Database Properties ***********************");
+        StringBuilder builder = new StringBuilder();
+        for (String key : properties.stringPropertyNames()) {
+            builder.append(String.format("db property: %s = %s\n", key, properties.getProperty(key)));
+        }
+        log.info(builder.toString());
+        log.info("***************************************************************\n");
+
+        dataSources = new ConcurrentHashMap<String, DataSource>(maxThreads, 0.85f, 256);
+
+        // store the default properties under the default name
+        connectionProperties.put(DEFAULT_DATASOURCE, properties);
+
+        // retrieve the list of named connections
+        String[] nameList = properties.getProperty(String.format("%s.%s", Controller.LIST_PREFIX, "names")).split(",");
+
+        // iterate the list
+        for (String name : nameList) {
+            log.info(String.format("Registering named connection: %s", name));
+
+            Properties props = new Properties(properties);      // create a new properties object
+            connectionProperties.put(name, props);
+
+            // "dereference" and insert all associated properties
+            String prefix = String.format("%s.%s.", Controller.LIST_PREFIX, name);
+            log.info("prefix=" + prefix);
+
+            for (String key : properties.stringPropertyNames()) {
+                log.info("key=" + key);
+                if (key.startsWith(prefix)) {
+                    log.info(String.format("Adding named property: %s = %s  (from %s)",
+                            key.substring(prefix.length()), properties.getProperty(key), key));
+
+                    props.put(key.substring(prefix.length()), properties.getProperty(key));
+                }
+            }
+        }
+
         sessions = new ConcurrentHashMap<SqlSession, String>(maxThreads, 0.85f, 256);
 
+        String isolation = properties.getProperty(Controller.UPDATE_ISOLATION);
+        if (isolation == null || isolation.length() == 0) isolation = "CONSISTENT_READ";
         switch (isolation) {
             case "READ_COMMITTED":
                 updateIsolation = Connection.TRANSACTION_READ_COMMITTED;
@@ -47,6 +92,7 @@ public class SqlSession implements AutoCloseable {
 
             case "SERIALIZABLE":
                 updateIsolation = Connection.TRANSACTION_SERIALIZABLE;
+                break;
 
             case "CONSISTENT_READ":
                 updateIsolation = TransactionIsolation.TRANSACTION_CONSISTENT_READ;
@@ -54,12 +100,21 @@ public class SqlSession implements AutoCloseable {
 
             case "WRITE_COMMITTED":
                 updateIsolation = TransactionIsolation.TRANSACTION_WRITE_COMMITTED;
+                break;
         }
     }
 
-    public SqlSession(Mode mode) {
+    public SqlSession(Mode mode)
+    { this(mode, DEFAULT_DATASOURCE); }
+
+    public SqlSession(Mode mode, String type) {
         this.mode = mode;
         commitMode = (mode == Mode.AUTO_COMMIT || mode == Mode.READ_ONLY ? Mode.AUTO_COMMIT : Mode.TRANSACTIONAL);
+        this.type = type;
+
+        if (! connectionProperties.containsKey(type)) {
+            log.info(String.format("No config found for SqlSession type %s - using default session", type));
+        }
 
         SqlSession session = current.get();
         if (session != null) {
@@ -190,7 +245,17 @@ public class SqlSession implements AutoCloseable {
             throws SQLException
     {
         if (connection == null) {
-            connection = dataSource.getConnection();
+
+            // get the existing DataSource object
+            DataSource ds = dataSources.get(type);
+            if (ds == null) {
+                ds = new com.nuodb.jdbc.DataSource(connectionProperties.get(type));
+                dataSources.put(type, ds);
+            }
+
+            log.info(String.format("Opening connection on DataSource %s", type));
+
+            connection = ds.getConnection();
             switch (mode) {
                 case READ_ONLY:
                     connection.setReadOnly(true);
