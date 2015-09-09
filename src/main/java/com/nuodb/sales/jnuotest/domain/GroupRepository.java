@@ -16,7 +16,7 @@ import java.util.Date;
 public class GroupRepository extends AbstractRepository<Group> {
 
     public GroupRepository() {
-        super("NuoTest.T_GROUP", "eventId", "name", "description", "dataCount", "date", "region", "week");
+        super("NuoTest.\"GROUP\"", "eventId", "groupGuid", "description", "dataCount", "dateCreated", "lastUpdated", "region", "week");
     }
 
     @Override
@@ -26,11 +26,12 @@ public class GroupRepository extends AbstractRepository<Group> {
 
     @Override
     protected Group mapIn(ResultSet row) throws SQLException {
-        Group group = new Group(row.getLong("id"), row.getString("name"));
+        Group group = new Group(row.getLong("id"), row.getString("groupGuid"));
         group.setEvent(row.getLong("eventId"));
         group.setDescription(row.getString("description"));
         group.setDataCount(row.getInt("dataCount"));
-        group.setDate(row.getDate("date"));
+        group.setDateCreated(row.getDate("dateCreated"));
+        group.setLastUpdated(row.getDate("lastUpdated"));
         group.setRegion(row.getString("region"));
         group.setWeek(row.getLong("week"));
 
@@ -40,11 +41,12 @@ public class GroupRepository extends AbstractRepository<Group> {
     @Override
     protected void mapOut(Group group, PreparedStatement update) throws SQLException {
         update.setLong(1, group.getEvent());
-        update.setString(2, group.getName());
+        update.setString(2, group.getGroupGuid());
         update.setString(3, group.getDescription());
         update.setInt(4, group.getDataCount());
-        update.setDate(5, new java.sql.Date(group.getDate().getTime()));
-        update.setString(6, group.getRegion());
-        update.setLong(7, group.getWeek());
+        update.setDate(5, new java.sql.Date(group.getDateCreated().getTime()));
+        update.setDate(6, new java.sql.Date(group.getLastUpdated().getTime()));
+        update.setString(7, group.getRegion());
+        update.setLong(8, group.getWeek());
     }
 }

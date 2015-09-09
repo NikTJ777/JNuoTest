@@ -28,7 +28,7 @@ public class EventDetails {
     }
 
     public Date getDate() {
-        return event.getDate();
+        return event.getDateCreated();
     }
 
     public List<Group> getGroups() {

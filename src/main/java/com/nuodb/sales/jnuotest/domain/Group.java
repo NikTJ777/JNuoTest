@@ -10,19 +10,17 @@ import java.util.Date;
 public class Group extends Entity {
 
     private long eventId;
-
-    private String name;
+    private String groupGuid;
     private String description;
-
     private int dataCount;
-    private Date date;
+    private Date dateCreated;
+    private Date lastUpdated;
     private String region;
     private long week;
 
-    protected Group(long id, String name) {
+    protected Group(long id, String groupGuid) {
         super(id);
-
-        this.name = name;
+        this.groupGuid = groupGuid;
     }
 
     public Group() {
@@ -35,14 +33,6 @@ public class Group extends Entity {
 
     public void setEvent(long event) {
         this.eventId = event;
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
     }
 
     public String getDescription() {
@@ -61,14 +51,6 @@ public class Group extends Entity {
         this.dataCount = dataCount;
     }
 
-    public Date getDate() {
-        return date;
-    }
-
-    public void setDate(Date date) {
-        this.date = date;
-    }
-
     public String getRegion() {
         return region;
     }
@@ -83,5 +65,37 @@ public class Group extends Entity {
 
     public void setWeek(long week) {
         this.week = week;
+    }
+
+    public long getEventId() {
+        return eventId;
+    }
+
+    public void setEventId(long eventId) {
+        this.eventId = eventId;
+    }
+
+    public String getGroupGuid() {
+        return groupGuid;
+    }
+
+    public void setGroupGuid(String groupGuid) {
+        this.groupGuid = groupGuid;
+    }
+
+    public Date getDateCreated() {
+        return dateCreated;
+    }
+
+    public void setDateCreated(Date dateCreated) {
+        this.dateCreated = dateCreated;
+    }
+
+    public Date getLastUpdated() {
+        return lastUpdated;
+    }
+
+    public void setLastUpdated(Date lastUpdated) {
+        this.lastUpdated = lastUpdated;
     }
 }

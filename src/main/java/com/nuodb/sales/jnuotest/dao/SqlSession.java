@@ -9,6 +9,7 @@ import java.sql.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
+import java.util.regex.Pattern;
 
 /**
  * Created by nik on 7/5/15.
@@ -18,6 +19,8 @@ public class SqlSession implements AutoCloseable {
     private final Mode mode;
     private final Mode commitMode;
     private final String type;
+    private SqlSession parent;
+    private CommunicationMode commsMode;
 
     private Connection connection;
     private PreparedStatement batch;
@@ -27,6 +30,8 @@ public class SqlSession implements AutoCloseable {
     private static Map<String, DataSource> dataSources;
 
     private static int updateIsolation;
+    private static CommunicationMode globalCommsMode;
+    private static String SpNamePrefix;
 
     private static ThreadLocal<SqlSession> current = new ThreadLocal<SqlSession>();
     private static Map<SqlSession, String> sessions;
@@ -38,6 +43,7 @@ public class SqlSession implements AutoCloseable {
     //}
 
     public enum Mode { AUTO_COMMIT, TRANSACTIONAL, BATCH, READ_ONLY };
+    public enum CommunicationMode { SQL, CALL, STORED_PROCEDURE };
 
     private static final String DEFAULT_DATASOURCE = "DEFAULT";
 
@@ -104,23 +110,29 @@ public class SqlSession implements AutoCloseable {
         }
     }
 
+    public static void setGlobalCommsMode(CommunicationMode globalMode) {
+        globalCommsMode = globalMode;
+    }
+
+    public static void setSpNamePrefix(String prefix) {
+        SpNamePrefix = prefix;
+    }
+
     public SqlSession(Mode mode)
     { this(mode, DEFAULT_DATASOURCE); }
 
     public SqlSession(Mode mode, String type) {
         this.mode = mode;
         commitMode = (mode == Mode.AUTO_COMMIT || mode == Mode.READ_ONLY ? Mode.AUTO_COMMIT : Mode.TRANSACTIONAL);
+        commsMode = (mode == Mode.BATCH ? CommunicationMode.SQL : globalCommsMode);
         this.type = type;
 
         if (! connectionProperties.containsKey(type)) {
             log.info(String.format("No config found for SqlSession type %s - using default session", type));
         }
 
-        SqlSession session = current.get();
-        if (session != null) {
-            session.close();
-            throw new PersistenceException("Previous session for this thread was not correctly closed");
-        }
+        // any existing session is our parent
+        parent = current.get();
 
         //session = new SqlSession(mode);
         current.set(this);
@@ -158,12 +170,41 @@ public class SqlSession implements AutoCloseable {
         }
     }
 
+    /**
+     * something fatal has happened in this session,
+     * so release any dead/invalid resources, and be ready to try again.
+     *
+     * Does NOT close (commit) resources.
+     * The current SqlSession is left active.
+     */
+    public boolean retry(Exception e)
+    {
+        rollback();
+        releaseResources();
+
+        // return true if the operation could be retried
+        if (e instanceof SQLTransientException){
+           return true;
+        }
+
+        return false;
+    }
+
     @Override
-    public void close() {
-        closeStatements();
-        closeConnection();
-        current.set(null);
+    public void close()
+    {
+        current.set(parent);
         sessions.remove(this);
+
+        try {
+            closeResources();
+        }
+        catch (Exception e) {
+            throw new PersistenceException(e, "Error closing session");
+        }
+        finally {
+            releaseResources();
+        }
     }
 
     public PreparedStatement getStatement(String sql) throws SQLException {
@@ -171,6 +212,10 @@ public class SqlSession implements AutoCloseable {
             batch.clearParameters();
             return batch;
         }
+
+        // delegate to our parent - centralises caching, etc
+        //if (parent != null)
+          //  return parent.getStatement(sql);
 
         if (statements == null) {
             statements = new ArrayList<PreparedStatement>(16);
@@ -180,7 +225,8 @@ public class SqlSession implements AutoCloseable {
         //PreparedStatement ps = statements.get(sql);
 
         //if (ps == null) {
-            int returnMode = (commitMode == Mode.AUTO_COMMIT ? Statement.RETURN_GENERATED_KEYS : Statement.NO_GENERATED_KEYS);
+            int returnMode = (mode != Mode.BATCH ? Statement.RETURN_GENERATED_KEYS : Statement.NO_GENERATED_KEYS);
+            //int returnMode = (commitMode == Mode.AUTO_COMMIT ? Statement.RETURN_GENERATED_KEYS : Statement.NO_GENERATED_KEYS);
             //int returnMode = Statement.RETURN_GENERATED_KEYS;
             PreparedStatement ps = connection().prepareStatement(sql, returnMode);
             statements.add(ps);
@@ -197,11 +243,55 @@ public class SqlSession implements AutoCloseable {
     public void execute(String script) {
         if (script == null || script.length() == 0) return;
 
-        String[] lines = script.split("@");
+        String[] lines = script.split(";");
+        StringBuilder statement = new StringBuilder(2048);
 
-        String command = "";
         try (Statement sql = connection().createStatement()) {
             assert sql != null;
+            boolean multiLine = false;
+            for (String line : lines) {
+
+                line = line.trim();
+                //System.out.println("line=" + line);
+
+                if (line.startsWith("//")) {
+                    continue;
+                }
+
+                // skip "GO" commands
+                if (line.equalsIgnoreCase("GO")) {
+                    multiLine = false;
+                    line = "";
+                }
+
+                // assemble multi-statement commands
+                else if (line.toUpperCase().startsWith("CREATE PROCEDURE"))
+                    multiLine = true;
+
+                else if (line.equalsIgnoreCase("END_PROCEDURE"))
+                    multiLine = false;
+
+                if (line != null && line.length() > 0) {
+                    if (statement.length() > 0) {
+                        statement.append("; ");
+                    }
+
+                    statement.append(line);
+                }
+
+                //log.info("multiLine? " + multiLine);
+                if (multiLine)
+                    continue;
+
+                log.info(String.format("executing statement %s", statement.toString()));
+                sql.execute(statement.toString());
+                statement.setLength(0);
+            }
+
+            /*
+            String command = "";
+            try (Statement sql = connection().createStatement()) {
+                assert sql != null;
 
             for (String line : lines) {
                 command = line.trim();
@@ -210,11 +300,11 @@ public class SqlSession implements AutoCloseable {
                 System.out.println(String.format("executing statement %s", command));
                 sql.execute(command);
             }
-
+            */
             System.out.println("commiting...");
             connection().commit();
         } catch (SQLException e) {
-            throw new PersistenceException(e, "Error executing SQL: %s", command);
+            throw new PersistenceException(e, "Error executing SQL: %s", statement);
         }
     }
 
@@ -226,7 +316,7 @@ public class SqlSession implements AutoCloseable {
         } else {
             statement.executeUpdate();
 
-            if (commitMode == Mode.AUTO_COMMIT) {
+            //if (commitMode == Mode.AUTO_COMMIT) {
                 try (ResultSet keys = statement.getGeneratedKeys()) {
                     if (keys != null && keys.next()) {
                         return keys.getLong(1);
@@ -234,7 +324,7 @@ public class SqlSession implements AutoCloseable {
 
                     return (keys != null && keys.next() == true ? keys.getLong(1) : 0);
                 }
-            }
+            //}
         }
 
         return 0;
@@ -244,6 +334,9 @@ public class SqlSession implements AutoCloseable {
     protected Connection connection()
             throws SQLException
     {
+        if (parent != null)
+            return parent.connection();
+
         if (connection == null) {
 
             // get the existing DataSource object
@@ -279,35 +372,47 @@ public class SqlSession implements AutoCloseable {
         return connection;
     }
 
-    protected void closeStatements() {
-        if (batch != null) {
-            try { batch.executeBatch(); } catch (Exception e) {}
-            batch = null;
-        }
-
-        if (statements == null) return;
-
-        for (PreparedStatement ps : statements) {
-        //for (PreparedStatement ps : statements.values()) {
-            try { ps.close(); } catch (Exception e) {}
-        }
-
-        statements.clear();
-    }
-
-    protected void closeConnection()
+    protected void closeResources()
+        throws Exception
     {
+        if (batch != null) {
+            long batchStart = System.currentTimeMillis();
+            batch.executeBatch();
+            long count = batch.getUpdateCount();
+            long duration = System.currentTimeMillis() - batchStart;
+
+            double rate = (count > 0 && duration > 0 ? 1000.0 * count / duration : 0);
+            log.info(String.format("Batch commit complete duration=%d ms; rate=%.2f ips", duration, rate));
+        }
+
         if (connection != null) {
             if (commitMode != Mode.AUTO_COMMIT) {
-                try { connection.commit(); }
-                catch (SQLException e) {
-                    throw new PersistenceException(e, "Error commiting JDBC connection");
+                connection.commit();
+            }
+        }
+    }
+
+    protected void releaseResources()
+    {
+        batch = null;
+
+        if (statements != null) {
+
+            for (PreparedStatement ps : statements) {
+                //for (PreparedStatement ps : statements.values()) {
+                try {
+                    ps.close();
+                } catch (Exception e) {
                 }
             }
 
-            try { connection.close(); } catch (Exception e) {}
-
-            connection = null;
+            statements.clear();
         }
+
+        try {
+            connection.close();
+        } catch (Exception e) {}
+
+        connection = null;
     }
 }

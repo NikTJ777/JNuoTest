@@ -9,26 +9,46 @@ import java.util.Date;
  */
 public class Event extends Entity {
 
+    private long customerId;
     private long ownerId;
-
+    private String eventGuid;
     private String name;
     private String description;
-    private Date date;
+    private Date dateCreated;
+    private Date lastUpdated;
     private String region;
 
-    protected Event(long id, String name) {
+    public Event(long id, long customerId, String eventGuid) {
         super(id);
+        this.customerId = customerId;
+        this.eventGuid = eventGuid;
     }
 
     public Event() {
         super();
     }
 
-    public long getOwner() {
+    public long getCustomerId() {
+        return customerId;
+    }
+
+    public void setCustomerId(long customerId) {
+        this.customerId = customerId;
+    }
+
+    public String getEventGuid() {
+        return eventGuid;
+    }
+
+    public void setEventGuid(String eventGuid) {
+        this.eventGuid = eventGuid;
+    }
+
+    public long getOwnerId() {
         return ownerId;
     }
 
-    public void setOwner(long owner) {
+    public void setOwnerId(long owner) {
         this.ownerId = owner;
     }
 
@@ -48,12 +68,20 @@ public class Event extends Entity {
         this.description = description;
     }
 
-    public Date getDate() {
-        return date;
+    public Date getDateCreated() {
+        return dateCreated;
     }
 
-    public void setDate(Date date) {
-        this.date = date;
+    public void setDateCreated(Date date) {
+        this.dateCreated = date;
+    }
+
+    public Date getLastUpdated() {
+        return lastUpdated;
+    }
+
+    public void setLastUpdated(Date lastUpdated) {
+        this.lastUpdated = lastUpdated;
     }
 
     public String getRegion() {

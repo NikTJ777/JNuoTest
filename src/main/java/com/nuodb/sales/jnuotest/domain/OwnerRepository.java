@@ -14,7 +14,7 @@ import java.sql.SQLException;
 public class OwnerRepository extends AbstractRepository<Owner> {
 
     public OwnerRepository() {
-        super("NuoTest.T_OWNER", "name", "masterAliasId", "region");
+        super("NuoTest.OWNER", "customerId", "ownerGuid", "dateCreated", "lastUpdated", "name", "masterAliasId", "region");
     }
 
     @Override
@@ -24,8 +24,11 @@ public class OwnerRepository extends AbstractRepository<Owner> {
 
     @Override
     public Owner mapIn(ResultSet row) throws SQLException {
-        Owner owner = new Owner(row.getLong("id"), row.getString("name"));
-        owner.setMasterAlias(row.getLong("masterAliasId"));
+        Owner owner = new Owner(row.getLong("id"), row.getLong("customerId"), row.getString("ownerGuid"));
+        owner.setDateCreated(row.getDate("dateCreated"));
+        owner.setLastUpdated(row.getDate("lastUpdated"));
+        owner.setName(row.getString("name"));
+        owner.setMasterAliasId(row.getLong("masterAliasId"));
         owner.setRegion(row.getString("region"));
 
         return owner;
@@ -33,8 +36,12 @@ public class OwnerRepository extends AbstractRepository<Owner> {
 
     @Override
     public void mapOut(Owner owner, PreparedStatement update) throws SQLException {
-        update.setString(1, owner.getName());
-        update.setLong(2, owner.getMasterAlias());
-        update.setString(3, owner.getRegion());
+        update.setLong(1, owner.getCustomerId());
+        update.setString(2, owner.getOwnerGuid());
+        update.setDate(3, new java.sql.Date(owner.getDateCreated().getTime()));
+        update.setDate(4, new java.sql.Date(owner.getLastUpdated().getTime()));
+        update.setString(5, owner.getName());
+        update.setLong(6, owner.getMasterAliasId());
+        update.setString(7, owner.getRegion());
     }
 }

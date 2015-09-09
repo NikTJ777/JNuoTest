@@ -44,6 +44,7 @@ public class Controller implements AutoCloseable {
     boolean initDb = false;
     boolean queryOnly = false;
 
+    TxModel txModel;
     SqlSession.Mode bulkCommitMode;
 
     //volatile long totalInserts = 0;
@@ -85,13 +86,18 @@ public class Controller implements AutoCloseable {
     public static final String DB_INIT =            "db.init";
     public static final String DB_INIT_SQL =        "db.init.sql";
     public static final String DB_SCHEMA =          "db.schema";
+    public static final String TX_MODEL =           "tx.model";
+    public static final String COMMUNICATION_MODE = "communication.mode";
     public static final String BULK_COMMIT_MODE =   "bulk.commit.mode";
+    public static final String SP_NAME_PREFIX=      "sp.name.prefix";
     public static final String QUERY_ONLY =         "query.only";
     public static final String QUERY_BACKOFF =      "query.backoff";
     public static final String UPDATE_ISOLATION =   "update.isolation";
     public static final String CONNECTION_TIMEOUT = "connection.timeout";
     public static final String DB_PROPERTY_PREFIX = "db.property.prefix";
     public static final String LIST_PREFIX =        "@list";
+
+    protected enum TxModel { DISCRETE, UNIFIED }
 
     private static Logger appLog = Logger.getLogger("JNuoTest");
     private static Logger insertLog = Logger.getLogger("InsertLog");
@@ -123,7 +129,10 @@ public class Controller implements AutoCloseable {
         defaultProperties.setProperty(MIN_BURST, "0");
         defaultProperties.setProperty(MAX_BURST, "0");
         defaultProperties.setProperty(RUN_TIME, "5");
+        defaultProperties.setProperty(TX_MODEL, "DISCRETE");
+        defaultProperties.setProperty(COMMUNICATION_MODE, "SQL");
         defaultProperties.setProperty(BULK_COMMIT_MODE, "BATCH");
+        defaultProperties.setProperty(SP_NAME_PREFIX, "importer_");
         defaultProperties.setProperty(DB_INIT, "false");
         defaultProperties.setProperty(QUERY_ONLY, "false");
         defaultProperties.setProperty(QUERY_BACKOFF, "0");
@@ -163,7 +172,9 @@ public class Controller implements AutoCloseable {
         // now load database properties into second (higher-priority) level of fileProperties
         loadProperties(fileProperties, DB_PROPERTIES_PATH);
 
-        appLog.info(String.format("command-line properties: %s", appProperties));
+        appLog.info(String.format("appProperties: %s", appProperties));
+
+        //resolveReferences(appProperties);
 
         StringBuilder builder = new StringBuilder(1024);
         builder.append("\n***************** Resolved Properties ********************\n");
@@ -221,6 +232,15 @@ public class Controller implements AutoCloseable {
         //DataSource dataSource = new com.nuodb.jdbc.DataSource(dbProperties);
         SqlSession.init(dbProperties, insertThreads + queryThreads);
 
+        SqlSession.CommunicationMode commsMode;
+        try { commsMode = Enum.valueOf(SqlSession.CommunicationMode.class, appProperties.getProperty(COMMUNICATION_MODE));}
+        catch (Exception e) { commsMode = SqlSession.CommunicationMode.SQL; }
+
+        SqlSession.setGlobalCommsMode(commsMode);
+        appLog.info(String.format("SqlSession.globalCommsMode set to %s", commsMode));
+
+        SqlSession.setSpNamePrefix(appProperties.getProperty(SP_NAME_PREFIX));
+
         ownerRepository = new OwnerRepository();
         ownerRepository.init();
 
@@ -232,6 +252,9 @@ public class Controller implements AutoCloseable {
 
         eventRepository = new EventRepository(ownerRepository, groupRepository, dataRepository);
         eventRepository.init();
+
+        try { txModel = Enum.valueOf(TxModel.class, appProperties.getProperty(TX_MODEL)); }
+        catch (Exception e) { txModel = TxModel.DISCRETE; }
 
         try { bulkCommitMode = Enum.valueOf(SqlSession.Mode.class, appProperties.getProperty(BULK_COMMIT_MODE)); }
         catch (Exception e) { bulkCommitMode = SqlSession.Mode.BATCH; }
@@ -290,6 +313,8 @@ public class Controller implements AutoCloseable {
 
         // just run some queries
         if (queryOnly) {
+
+            appLog.info("Query-Only...");
 
             long eventId = 1;
 
@@ -467,10 +492,12 @@ public class Controller implements AutoCloseable {
         StringBuffer newVar = new StringBuffer();
 
         for (Map.Entry<Object, Object> entry : props.entrySet()) {
+
             Matcher match = var.matcher(entry.getValue().toString());
             while (match.find()) {
                 //appLog.info(String.format("match.group=%s", match.group()));
-                String val = props.getProperty(match.group().replaceAll("\\$|\\{|\\}", ""));
+                //String val = props.getProperty(match.group().replaceAll("\\$|\\{|\\}", ""));
+                String val = appProperties.getProperty(match.group().replaceAll("\\$|\\{|\\}", ""));
                 appLog.info(String.format("resolving var reference %s to %s", match.group(), val));
 
                 if (val != null) match.appendReplacement(newVar, val);
@@ -515,12 +542,15 @@ public class Controller implements AutoCloseable {
             long eventId;
             long groupId;
 
+            // open optional outer session/transaction
+            SqlSession outerTx = (txModel == TxModel.UNIFIED ? new SqlSession(SqlSession.Mode.TRANSACTIONAL) : null);
+
             try (SqlSession session = new SqlSession(SqlSession.Mode.AUTO_COMMIT)) {
-                ownerId = generateOwner();
+                ownerId = ownerRepository.persist(generateOwner());
                 System.out.println("\n------------------------------------------------");
                 report("Owner", 1, System.nanoTime() - start);
 
-                eventId = generateEvent(ownerId);
+                eventId = eventRepository.persist(generateEvent(ownerId));
             }
 
             int groupCount = minGroups + random.nextInt(maxGroups - minGroups);
@@ -536,7 +566,7 @@ public class Controller implements AutoCloseable {
 
             for (int gx = 0; gx < groupCount; gx++) {
                 try (SqlSession session = new SqlSession(SqlSession.Mode.AUTO_COMMIT)) {
-                    groupId = generateGroup(eventId, gx);
+                    groupId = groupRepository.persist(generateGroup(eventId, gx));
                 }
 
                 total += dataCount;
@@ -547,13 +577,15 @@ public class Controller implements AutoCloseable {
                     dataRows.put(data.getInstanceUID(), data);
                 }
 
-                try (SqlSession session = new SqlSession(SqlSession.Mode.AUTO_COMMIT)) {
-                    long uniqueRows = dataRepository.checkUniqueness(dataRows);
+                // in SP mode, the SP does the uniqueness testing - in BATCH mode we do it separately
+                if (bulkCommitMode == SqlSession.Mode.BATCH) {
+                    try (SqlSession session = new SqlSession(SqlSession.Mode.AUTO_COMMIT)) {
+                        long uniqueRows = dataRepository.checkUniqueness(dataRows);
 
-                    appLog.info(String.format("%d rows out of %d new rows are unique", uniqueRows, dataCount));
+                        appLog.info(String.format("%d rows out of %d new rows are unique", uniqueRows, dataCount));
 
-
-                    groupRepository.update(groupId, "dataCount", uniqueRows);
+                        groupRepository.update(groupId, "dataCount", uniqueRows);
+                    }
                 }
 
                 long dataStart = System.nanoTime();
@@ -571,6 +603,8 @@ public class Controller implements AutoCloseable {
                 report("Data Group", dataCount, System.nanoTime() - dataStart);
             }
 
+            if (outerTx != null) outerTx.close();
+
             long duration = System.nanoTime() - start;
             report("All Data", total, duration);
 
@@ -583,52 +617,70 @@ public class Controller implements AutoCloseable {
             scheduleViewTask(eventId);
         }
 
-        protected long generateOwner() {
+        protected Owner generateOwner() {
 
             Owner owner = new Owner();
+            owner.setCustomerId(unique % 200);
+            owner.setOwnerGuid(String.format("Owner-GUID-%d", unique));
+            owner.setDateCreated(dateStamp);
+            owner.setLastUpdated(dateStamp);
             owner.setName(String.format("Owner-%d", unique));
+            owner.setMasterAliasId(unique);
             owner.setRegion(unique % 2 == 0 ? "Region_A" : "Region_B");
 
-            return ownerRepository.persist(owner);
+            return owner;
+            //return ownerRepository.persist(owner);
         }
 
-        protected long generateEvent(long ownerId) {
+        protected Event generateEvent(long ownerId) {
 
-            Event event = new Event();
-            event.setName(String.format("Event-%d", unique));
-            event.setOwner(ownerId);
-            event.setDate(dateStamp);
-            event.setRegion(unique % 2 == 0 ? "Region_A" : "Region_B");
+            Event ev = new Event();
+            ev.setCustomerId(unique % 200);
+            ev.setOwnerId(ownerId);
+            ev.setEventGuid(String.format("Event-GUID-%d", unique));
+            ev.setName(String.format("Event-%d", unique));
+            ev.setDescription("Test data generated by CSNuoTest");
+            ev.setDateCreated(dateStamp);
+            ev.setLastUpdated(dateStamp);
+            ev.setRegion(unique % 2 == 0 ? "Region_A" : "Region_B");
 
-            return eventRepository.persist(event);
+            return ev;
+            //return eventRepository.persist(event);
         }
 
-        protected long generateGroup(long eventId, int index) {
+        protected Group generateGroup(long eventId, int index) {
 
             Group group = new Group();
-            group.setEvent(eventId);
-            group.setName(String.format("Group-%d-%d", unique, index));
+            group.setEventId(eventId);
+            group.setGroupGuid(String.format("Group-%d-%d", unique, index));
+            //group.setGroupGuid(String.Join("-", "Group", unique, index);
             group.setDataCount(0);
-            group.setDate(dateStamp);
-            group.setDescription("Test data generated by JNuoTest");
+            group.setDateCreated(dateStamp);
+            group.setLastUpdated(dateStamp);
             group.setRegion(unique % 2 == 0 ? "Region_A" : "Region_B");
             group.setWeek(unique / 35000);
 
-            return groupRepository.persist(group);
+            return group;
+            //return groupRepository.persist(group);
         }
 
         protected Data generateData(long groupId, int index) {
+            //String suffix = string.Join("-", unique, groupId, index);
+            //String instanceUID = "image-"+suffix;
             String instanceUID = String.format("image-%d-%d-%d", unique, groupId, index);
 
             Data data = new Data();
-            data.setGroup(groupId);
+            data.setGroupId(groupId);
+            data.setDataGuid("Data-" + instanceUID);
             data.setInstanceUID(instanceUID);
-            data.setName(String.format("Data-%d-%d-%d", unique, groupId, index));
-            data.setDescription("Test data generated by JNuoTest");
-            data.setPath(String.format("file:///remote/storage/%s.bin", instanceUID));
-            data.setRegionWeek(String.format("Region_%s-%d", (unique % 2 == 0 ? "A" : "B"), (unique / 35000)));
+            data.setCreatedDateTime(dateStamp);
+            data.setAcquiredDateTime(dateStamp);
+            data.setVersion(0);
+            data.setActive(true);
+            data.setSizeOnDiskMB(65.5F);
+            data.setRegionWeek(String.format("%s%d", (unique % 2 == 0 ? "Region_A-" : "Region_B-"), (unique / 35000)));
 
-            return data;    // don't persist individually - we may be persisting in a batch
+            return data;
         }
 
         private void report(String name, int count, long duration) {
@@ -655,6 +707,8 @@ public class Controller implements AutoCloseable {
 
                 long start = System.nanoTime();
                 EventDetails details = eventRepository.getDetails(eventId);
+                if (details == null) return;
+
                 long duration = System.nanoTime() - start;
 
                 totalQueries.incrementAndGet();

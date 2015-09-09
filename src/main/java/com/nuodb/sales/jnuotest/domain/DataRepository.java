@@ -17,7 +17,7 @@ import java.util.Map;
 public class DataRepository extends AbstractRepository<Data> {
 
     public DataRepository() {
-        super("NuoTest.T_DATA", "groupId", "instanceUID", "name", "description", "path", "active", "regionWeek");
+        super("NuoTest.DATA", "groupId", "dataGuid", "instanceUID", "createdDateTime", "acquiredDateTime", "version", "active", "sizeOnDiskMB", "regionWeek");
     }
 
     @Override
@@ -68,12 +68,14 @@ public class DataRepository extends AbstractRepository<Data> {
 
     @Override
     protected Data mapIn(ResultSet row) throws SQLException {
-        Data data = new Data(row.getLong("id"), row.getString("name"));
+        Data data = new Data(row.getLong("id"), row.getString("dataGuid"));
         data.setGroup(row.getLong("groupId"));
         data.setInstanceUID(row.getString("instanceUID"));
-        data.setDescription(row.getString("description"));
-        data.setPath(row.getString("path"));
+        data.setCreatedDateTime(row.getDate("createdDateTime"));
+        data.setAcquiredDateTime(row.getDate("acquiredDateTime"));
+        data.setVersion(row.getInt("version"));
         data.setActive(row.getBoolean("active"));
+        data.setSizeOnDiskMB(row.getFloat("sizeOnDiskMB"));
         data.setRegionWeek(row.getString("regionWeek"));
 
         return data;
@@ -82,11 +84,13 @@ public class DataRepository extends AbstractRepository<Data> {
     @Override
     protected void mapOut(Data data, PreparedStatement update) throws SQLException {
         update.setLong(1, data.getGroup());
-        update.setString(2, data.getInstanceUID());
-        update.setString(3, data.getName());
-        update.setString(4, data.getDescription());
-        update.setString(5, data.getPath());
-        update.setBoolean(6, data.isActive());
-        update.setString(7, data.getRegionWeek());
+        update.setString(2, data.getDataGuid());
+        update.setString(3, data.getInstanceUID());
+        update.setDate(4, new java.sql.Date(data.getCreatedDateTime().getTime()));
+        update.setDate(5, new java.sql.Date(data.getAcquiredDateTime().getTime()));
+        update.setInt(6, data.getVersion());
+        update.setBoolean(7, data.isActive());
+        update.setFloat(8, data.getSizeOnDiskMB());
+        update.setString(9, data.getRegionWeek());
     }
 }

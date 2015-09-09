@@ -21,7 +21,7 @@ public class EventRepository extends AbstractRepository<Event> {
     private DataRepository dataRepository;
 
     public EventRepository(OwnerRepository ownerRepository, GroupRepository groupRepository, DataRepository dataRepository) {
-        super("NuoTest.T_EVENT", "ownerId", "name", "description", "date", "region");
+        super("NuoTest.EVENT", "customerId", "ownerId", "eventGuid", "name", "description", "dateCreated", "lastUpdated", "region");
 
         this.ownerRepository = ownerRepository;
         this.groupRepository = groupRepository;
@@ -52,7 +52,12 @@ public class EventRepository extends AbstractRepository<Event> {
         try {
 
             Event event = findById(eventId);
-            Owner owner = ownerRepository.findById(event.getOwner());
+            if (event == null) {
+                log.info(String.format("Event %d not found.", eventId));
+                return null;
+            }
+
+            Owner owner = ownerRepository.findById(event.getOwnerId());
             result = new EventDetails(event, owner);
 
             List<Group> groups = groupRepository.findAllBy("eventId", eventId);
@@ -82,10 +87,12 @@ public class EventRepository extends AbstractRepository<Event> {
 
     @Override
     protected Event mapIn(ResultSet row) throws SQLException {
-        Event event = new Event(row.getLong("id"), row.getString("name"));
-        event.setOwner(row.getLong("ownerId"));
+        Event event = new Event(row.getLong("id"), row.getLong("customerId"), row.getString("eventGuid"));
+        event.setOwnerId(row.getLong("ownerId"));
+        event.setName(row.getString("name"));
         event.setDescription(row.getString("description"));
-        event.setDate(row.getDate("date"));
+        event.setDateCreated(row.getDate("dateCreated"));
+        event.setLastUpdated(row.getDate("lastUpdated"));
         event.setRegion(row.getString("region"));
 
         return event;
@@ -93,10 +100,13 @@ public class EventRepository extends AbstractRepository<Event> {
 
     @Override
     protected void mapOut(Event event, PreparedStatement update) throws SQLException {
-        update.setLong(1, event.getOwner());
-        update.setString(2, event.getName());
-        update.setString(3, event.getDescription());
-        update.setDate(4, new java.sql.Date(event.getDate().getTime()));
-        update.setString(5, event.getRegion());
+        update.setLong(1, event.getCustomerId());
+        update.setLong(2, event.getOwnerId());
+        update.setString(3, event.getEventGuid());
+        update.setString(4, event.getName());
+        update.setString(5, event.getDescription());
+        update.setDate(6, new java.sql.Date(event.getDateCreated().getTime()));
+        update.setDate(7, new java.sql.Date(event.getLastUpdated().getTime()));
+        update.setString(8, event.getRegion());
     }
 }
